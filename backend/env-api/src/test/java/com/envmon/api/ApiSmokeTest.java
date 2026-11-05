@@ -8,6 +8,7 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.web.server.LocalServerPort;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
@@ -78,6 +79,46 @@ class ApiSmokeTest {
     void businessApiWithoutTokenShouldReturn401() {
         ResponseEntity<Map> resp = rest.getForEntity(url("/station?page=1&pageSize=5"), Map.class);
         assertEquals(401, resp.getStatusCodeValue());
+    }
+
+    /**
+     * 时序查询守卫的连通性验证：ts_* 的 SELECT 现在必须带 stationId/tenantId，
+     * 这里走一遍真实链路，确认拦截器注册成功且没有误伤正常查询。
+     */
+    @Test
+    void realtimeShouldPassThroughScopeGuard() {
+        String token = loginAndGetToken();
+
+        Map<String, Object> tenantScoped = getWithToken("/monitor/realtime?limit=5", token);
+        assertEquals(0, ((Number) tenantScoped.get("code")).intValue(), "跨站房实时值（tenantId 判定）应放行");
+
+        Map<String, Object> stationScoped = getWithToken("/monitor/station/1/realtime", token);
+        assertEquals(0, ((Number) stationScoped.get("code")).intValue(), "单站房实时值（stationId 判定）应放行");
+    }
+
+    /** 不存在的站房：守卫要在 SQL 之前拒绝，且按"无权限"口径返回 40400 */
+    @Test
+    void unknownStationShouldBeRejectedByScopeGuard() {
+        String token = loginAndGetToken();
+        Map<String, Object> resp = getWithToken("/monitor/station/99999999/realtime", token);
+        assertEquals(40400, ((Number) resp.get("code")).intValue());
+    }
+
+    private String loginAndGetToken() {
+        Map<String, String> body = new HashMap<String, String>();
+        body.put("username", "admin");
+        body.put("password", "Admin@123");
+        Map<String, Object> data = (Map<String, Object>) postJson("/auth/login", body).getBody().get("data");
+        return String.valueOf(data.get("token"));
+    }
+
+    private Map<String, Object> getWithToken(String path, String token) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Authorization", "Bearer " + token);
+        ResponseEntity<Map> resp = rest.exchange(url(path), HttpMethod.GET,
+                new HttpEntity<Void>(headers), Map.class);
+        assertEquals(200, resp.getStatusCodeValue());
+        return resp.getBody();
     }
 
     private ResponseEntity<Map> postJson(String path, Map<String, String> body) {

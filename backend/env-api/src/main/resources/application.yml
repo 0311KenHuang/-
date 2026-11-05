@@ -36,7 +36,9 @@ spring:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 默认不打印 SQL：不带 profile 启动时也必须是安全的。
+    # 本地调试用 --spring.profiles.active=dev（application-dev.yml 会打开 StdOut 输出）
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
   global-config:
     banner: false
     db-config:
@@ -48,8 +50,13 @@ mybatis-plus:
 sa-token:
   token-name: Authorization
   token-prefix: Bearer
+  # 令牌有效期 8 小时
   timeout: 28800
-  active-timeout: -1
+  # 闲置超时 2 小时：此前为 -1（永不因闲置过期），
+  # 配合 localStorage 存 token 等于被窃取后可长期复用。
+  # 现场移动端连续作业不会闲置超过 2 小时，再长就该重新认证
+  active-timeout: 7200
+  # 允许多端并存：运维现场常用"手机 App + 电脑后台"同时在线
   is-concurrent: true
   is-share: false
   is-read-cookie: false
@@ -123,6 +130,7 @@ ts:
 logging:
   level:
     root: info
-    com.envmon: debug
+    # 默认 info：debug 会把报文体、SQL 参数带进日志，生产环境属泄露面
+    com.envmon: info
   pattern:
     console: "%d{HH:mm:ss.SSS} [%thread] %-5level [%X{traceId}] %logger{36} - %msg%n"

@@ -1,0 +1,21 @@
+# ============================================================
+# 本地开发 profile（--spring.profiles.active=dev 启用）
+#
+# 为什么把调试开关放这里而不是 application.yml：
+# 不带 profile 启动时（例如运维直接 java -jar）必须是"安全默认值"，
+# SQL 全量打印和 debug 日志只能显式开启。
+# ============================================================
+
+spring:
+  datasource:
+    # 本地 MySQL 常见是空口令；生产 profile 仍强制环境变量注入
+    password: ${DB_PASSWORD:}
+
+mybatis-plus:
+  configuration:
+    # 本地调试需要看 SQL 与参数
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+logging:
+  level:
+    com.envmon: debug

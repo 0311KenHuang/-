@@ -25,7 +25,6 @@ export default defineConfig({
           if (id.includes('/vue/') || id.includes('@vue') || id.includes('vue-router') || id.includes('pinia')) {
             return 'vendor-vue';
           }
-          if (id.includes('echarts') || id.includes('zrender')) return 'vendor-echarts';
           return 'vendor-misc';
         },
       },

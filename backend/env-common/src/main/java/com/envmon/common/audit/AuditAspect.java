@@ -27,8 +27,14 @@ public class AuditAspect {
     @Autowired(required = false)
     private AuditWriter auditWriter;
 
+    /** 变更前快照提供者：业务模块实现后才会有，没有就只记 after */
+    @Autowired(required = false)
+    private AuditBeforeProvider beforeProvider;
+
     @Around("@annotation(audit)")
     public Object around(ProceedingJoinPoint pjp, Audit audit) throws Throwable {
+        // 必须在业务方法执行前取旧值：执行后库里已经是新值，before 就永远补不回来了
+        String beforeJson = snapshotBefore(audit, pjp.getArgs());
         Object result = pjp.proceed();
         if (auditWriter == null) {
             return result;
@@ -44,6 +50,7 @@ public class AuditAspect {
             entry.setModule(audit.module());
             entry.setAction(audit.action());
             entry.setBizId(extractBizId(result, pjp.getArgs()));
+            entry.setBeforeJson(beforeJson);
             entry.setAfterJson(toJson(pjp.getArgs()));
             fillRequestInfo(entry);
             auditWriter.write(entry);
@@ -52,6 +59,20 @@ public class AuditAspect {
             log.warn("审计写入失败: {}", e.getMessage());
         }
         return result;
+    }
+
+    /** 前置快照失败只降级为"没有 before"，不能打断业务 */
+    private String snapshotBefore(Audit audit, Object[] args) {
+        if (beforeProvider == null) {
+            return null;
+        }
+        try {
+            Object snapshot = beforeProvider.snapshot(audit.module(), audit.action(), args);
+            return toJson(snapshot);
+        } catch (Exception e) {
+            log.warn("审计前置快照失败 module={} action={}: {}", audit.module(), audit.action(), e.getMessage());
+            return null;
+        }
     }
 
     private String extractBizId(Object result, Object[] args) {
@@ -88,11 +109,30 @@ public class AuditAspect {
                 }
                 safe.put("arg" + i, a);
             }
-            String json = maskSensitive(MAPPER.writeValueAsString(safe));
-            return json.length() > 4000 ? json.substring(0, 4000) : json;
+            return clip(maskSensitive(MAPPER.writeValueAsString(safe)));
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** 单个对象序列化（变更前快照）：与入参共用脱敏与长度上限 */
+    private String toJson(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return clip(maskSensitive(MAPPER.writeValueAsString(value)));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 审计列是 TEXT，但单条留痕不该无限膨胀：超长直接截断并留标记 */
+    private String clip(String json) {
+        if (json == null || json.length() <= 4000) {
+            return json;
+        }
+        return json.substring(0, 4000) + "...(truncated)";
     }
 
     /** 审计里绝不能出现明文口令/令牌 */

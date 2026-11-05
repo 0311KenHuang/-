@@ -57,9 +57,13 @@ docker compose up -d          # MySQL 3306 / Redis 6379
 ```bash
 cd backend
 ./mvn.sh clean package -DskipTests
-./mvn.sh -pl env-api spring-boot:run
-# 或：java -jar env-api/target/env-api-0.1.0.jar --server.port=8080
+# 本地开发必须显式开 dev profile（SQL 日志、debug 级别都在这里）
+./mvn.sh -pl env-api spring-boot:run -Dspring-boot.run.profiles=dev
+# 或：java -jar env-api/target/env-api-0.1.0.jar --server.port=8080 --spring.profiles.active=dev
 ```
+
+> 不带 profile 启动是"安全默认值"：不打印 SQL、日志级别 info。
+> 生产用 `--spring.profiles.active=prod`，数据库/Redis 凭据必须由环境变量注入（无默认值）。
 
 首次启动 Flyway 自动建表并写入演示数据。验证：
 

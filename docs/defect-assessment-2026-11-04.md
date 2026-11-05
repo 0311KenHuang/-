@@ -152,8 +152,33 @@ Spring Boot 2.7.x OSS 支持 2023-11 已终止，无安全补丁来源；JDK 8 �
 
 ## 未修复 / 遗留
 
-- **CI**：git 仓库已就绪但无远端，CI 平台（GitHub Actions / Gitee Go）待定后补 workflow
 - **N-4** Spring Boot 2.7 EOL 升级立项（单独立项，工程量大）
-- N-3 ts_* 约定式防线的 Mapper 层根治；审计 before_json 字段在切面中未填充（仅 after_json）
-- 部署层 nginx 的 CSP/反代配置（后端已给安全头，静态资源侧需部署时补）
-- 前端 echarts 死依赖清理（需 npm install，本机网络受限时暂缓）
+- CSP 的违规上报（report-uri）与 HSTS（需先确认全站 HTTPS 与证书续期方式）
+- 前端 token 改 cookie + CSRF 的中期方案（N-5 的根治，非短期项）
+
+---
+
+# 修复实施记录（第三批，2026-11-05）
+
+本轮处理第二批末尾"未修复/遗留"中的四项代码类欠账，并把两处"能靠人记性"的约束改成机制约束。
+
+| 编号 | 修复内容 | 关键改动 |
+|---|---|---|
+| N-3 | ts_* 防线由约定改为机制 | 新增 `TsScopeGuard`（MyBatis `Executor` 拦截器）：`ts_data_minute/hour/day` 的 SELECT 必须显式带 `stationId`（站房归属 + dataScope 断言）或 `tenantId`（须等于上下文租户），两者皆无一律拒绝；无登录态仅放行"无 scope 参数"的全局聚合。站房归属由 `StationScopeRegistry` 提供（JdbcTemplate 全表快照，默认 60s TTL，未命中定向补查）。`TsQueryService.requireStation` 保留为更友好的业务提示，但已不是唯一防线 |
+| N-3 补 | 核验接口作用域 | `OpsTraceService.check` 先按 `visibleStationIds()` 过滤站房再查时序：既堵住"别的组织有哪些站房"的信息泄露，也避免守卫对越权站房抛错导致整页核验失败 |
+| 审计 | before_json 落地 | 新增 `AuditBeforeProvider`（可选 bean）；`AuditAspect` 在 `proceed()` 之前取快照（失败降级 null，不影响业务）；`DefaultAuditBeforeProvider` 覆盖 station UPDATE/CHANGE_STATUS、ops TASK_ACTION/RECORD_AUDIT、alarm HANDLE；快照与入参共用脱敏 + 4000 字截断 |
+| P1-1 补 | 默认配置改为安全默认 | `application.yml` 的 `log-impl` 改 NoLogging、`com.envmon` 降 info；新增 `application-dev.yml` 承载 SQL 打印与 debug；`sa-token.active-timeout` 由 -1 改 7200（闲置 2 小时失效） |
+| N-6 补 | 部署层 nginx | 新增 `deploy/nginx/env-mon.conf`：SPA history 回退、`/api` 反代（透传 X-Forwarded-For 供审计取真实 IP）、CSP + nosniff + X-Frame-Options、gzip、`/assets` 长缓存、20m 上传上限 |
+| 前端 | echarts 死依赖清理 | `package.json`、`package-lock.json`（含 echarts/zrender 两个包节点）、`vite.config.ts` 的 vendor-echarts 分包规则三处同步移除 |
+| 测试 | 守卫与切面单测 | 新增 `TsScopeGuardTest`（16 例，覆盖 fail-closed 全部分支）、`AuditAspectTest`（5 例，含"快照必须早于业务执行"的顺序断言）；`ApiSmokeTest` 增时序查询正向 2 例 + 未知站房 40400 1 例 |
+
+## 验证结果（全部实跑，2026-11-05）
+
+- `RUN_IT=true DB_PASSWORD= ./mvn.sh -o -pl env-api -am test`：6 模块 BUILD SUCCESS，**82 例通过**（单测 76 + 集成 6）
+- `npm run build`：`vue-tsc` 零错误，主包 4.82KB，`vendor-element` 815KB，构建产物中已无 vendor-echarts
+
+## 本轮踩到的两个坑（已修）
+
+1. **MyBatis `MapperMethod.ParamMap.get()` 对不存在的键会抛 `BindingException`**，不是 HashMap 语义。守卫首版直接用 `get("stationId")`，`tenantId` 那类查询在生产链路一跑就 500——集成测试第一次执行即暴露。修法是先 `containsKey`；单测同步改用真实 `ParamMap`，否则用普通 HashMap 永远测不出来。
+2. **守卫内不能再调 Mapper**：拦截器跑在 `Executor` 链上，再用 Mapper 查站房会形成嵌套 SqlSession 并额外占用一条连接，连接池紧张时可能出现"所有线程都持有一条连接、都在等第二条"的假死。故站房归属改由 JdbcTemplate 整表快照提供，判定路径上零 SQL。
+
