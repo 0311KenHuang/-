@@ -25,10 +25,11 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot123456"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot123456 --silent"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
+          --health-start-period=30s
       redis:
         image: redis:7-alpine
         ports:
@@ -38,6 +39,7 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
+          --health-start-period=10s
     steps:
       - uses: actions/checkout@v4
 
@@ -47,6 +49,21 @@ jobs:
           distribution: temurin
           java-version: '8'
           cache: maven
+
+      - name: 等待 MySQL 真正可查询
+        env:
+          MYSQL_PWD: root123456
+        run: |
+          for i in $(seq 1 30); do
+            if mysql -h 127.0.0.1 -uroot -e "SELECT 1" >/dev/null 2>&1; then
+              echo "MySQL 就绪（第 ${i} 次探测）"
+              mysql -h 127.0.0.1 -uroot -e "SHOW DATABASES LIKE 'env_mon'"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "MySQL 30 次探测仍未就绪"
+          exit 1
 
       - name: 后端测试（含集成测试）
         working-directory: backend
@@ -61,7 +78,21 @@ jobs:
           RUN_IT: 'true'
         run: |
           chmod +x mvn.sh
-          ./mvn.sh -B clean test
+          # CI 走 Maven Central：pom 里只配了 aliyun，Runner 在美国访问不稳定
+          ./mvn.sh -B -ntp -s "$GITHUB_WORKSPACE/.github/maven-settings.xml" clean test
+
+      - name: 失败时输出测试摘要
+        if: failure()
+        working-directory: backend
+        run: |
+          {
+            echo "## 后端测试失败摘要"
+            echo ""
+            echo '```'
+            grep -h -A 3 "Tests run:.*Failures: [1-9]\|Tests run:.*Errors: [1-9]\|ERROR\]" \
+              */target/surefire-reports/*.txt 2>/dev/null | head -80 || echo "无 surefire 文本报告"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   web:
     name: 前端类型检查与构建

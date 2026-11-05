@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CI 专用 Maven 配置：走 Maven Central。
+
+  工程 pom 里只声明了 aliyun 仓库（国内开发快），
+  但 GitHub Runner 在美国，访问 maven.aliyun.com 国际链路不稳定，
+  会出现依赖下载超时导致构建失败 —— 这里用 mirrorOf=* 把全部仓库
+  重定向到 Central，国内开发仍用 pom 里的 aliyun 配置，互不影响。
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+  <mirrors>
+    <mirror>
+      <id>central-direct</id>
+      <name>Maven Central</name>
+      <url>https://repo.maven.apache.org/maven2</url>
+      <mirrorOf>*</mirrorOf>
+    </mirror>
+  </mirrors>
+</settings>
