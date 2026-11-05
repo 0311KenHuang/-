@@ -78,8 +78,9 @@ jobs:
           RUN_IT: 'true'
         run: |
           chmod +x mvn.sh
+          # Runner 自带 Maven，不依赖仓库内 .tools（它在 .gitignore 里，检出时不存在）
           # CI 走 Maven Central：pom 里只配了 aliyun，Runner 在美国访问不稳定
-          ./mvn.sh -B -ntp -s "$GITHUB_WORKSPACE/.github/maven-settings.xml" clean test
+          mvn -B -ntp -s "$GITHUB_WORKSPACE/.github/maven-settings.xml" clean test
 
       - name: 失败时输出测试摘要
         if: failure()

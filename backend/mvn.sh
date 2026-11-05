@@ -13,6 +13,17 @@ if [ -z "$JH" ] || [ ! -x "$JH/bin/java" ]; then
   JH="C:/Program Files/Eclipse Adoptium/jdk-8.0.482.8-hotspot"
 fi
 export JAVA_HOME="$JH"
+
+# .tools 是本机内置 Maven，不入库（.gitignore 排除）：
+# 在 CI / 其他机器上没有它时，降级用系统 mvn，保证同一入口到处可跑
+if [ ! -f "$MH/boot/plexus-classworlds-2.8.0.jar" ]; then
+  if command -v mvn >/dev/null 2>&1; then
+    exec mvn "$@"
+  fi
+  echo "未找到内置 Maven（$MH）且系统无 mvn，请安装 Maven 3.9+" >&2
+  exit 1
+fi
+
 exec "$JH/bin/java" -classpath "$MH/boot/plexus-classworlds-2.8.0.jar" \
   "-Dclassworlds.conf=$MH/bin/m2.conf" \
   "-Dmaven.home=$MH" \
