@@ -10,6 +10,7 @@ target/
 # backend/.tools/
 
 # ---- Node / 前端 ----
+server/dist/
 node_modules/
 web/dist/
 *.tsbuildinfo
