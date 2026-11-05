@@ -1,0 +1,37 @@
+# ============================================================
+# 生产环境 profile（--spring.profiles.active=prod 启用）
+#
+# 与 application.yml 的差异：
+# - 关闭 MyBatis SQL 控制台输出与业务 DEBUG（防泄露、减开销）
+# - 数据源强制环境变量注入，不给默认密码兜底
+# - JDBC 走 SSL（数据库服务端需配置证书；内网确无 TLS 时
+#   显式覆盖 DB_USESSL=false 并在网络层兜底）
+# ============================================================
+
+spring:
+  datasource:
+    # 生产不提供任何默认值：缺环境变量直接启动失败，比静默用弱口令安全
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=${DB_USESSL:true}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+  redis:
+    host: ${REDIS_HOST}
+    port: ${REDIS_PORT:6379}
+    # 生产 Redis 必须配置密码（requirepass）
+    password: ${REDIS_PASSWORD}
+
+mybatis-plus:
+  configuration:
+    # 关闭 SQL 全量打印；需要排查时用 log-impl=Slf4jImpl + logger 局部调级
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+logging:
+  level:
+    root: info
+    com.envmon: info
+
+hj212:
+  # 业务线程池：按并发设备数调，默认 16
+  business-threads: 16
+  # MN 归属缓存 10 分钟过期：设备改绑后最迟此时收敛
+  mn-cache-ttl-seconds: 600

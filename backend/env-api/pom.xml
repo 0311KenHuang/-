@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.envmon</groupId>
+    <artifactId>env-monitor</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>env-api</artifactId>
+  <name>env-api</name>
+  <description>HTTP 接口层与启动类</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.envmon</groupId>
+      <artifactId>env-service</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>cn.dev33</groupId>
+      <artifactId>sa-token-spring-boot-starter</artifactId>
+    </dependency>
+    <!-- 集成测试：起真实上下文连本机 MySQL（RUN_IT=true 时启用） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>com.envmon.api.EnvApiApplication</mainClass>
+        </configuration>
+        <executions>
+          <execution>
+            <goals><goal>repackage</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

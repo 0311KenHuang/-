@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: env-monitor-ingest
+  main:
+    web-application-type: none
+    banner-mode: off
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:env_mon}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:root123456}
+    hikari:
+      maximum-pool-size: 5
+  flyway:
+    enabled: false
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+
+hj212:
+  port: 20000
+  idle-seconds: 300
+  # qnrtn：CP 回 QnRtn；exerntn：CP 回 ExeRtn。以现场设备厂商约定为准
+  ack-mode: qnrtn
+  # 未注册 MN 是否拒收；拒收时原文仍会落库留档
+  reject-unknown-mn: true
+  # 工作参数类报文的 CN（2025 新增上传内容，正式编码未固定，按现场厂商约定配置）
+  work-param-cn: 3020,3031,3041
+
+# 接入进程只解析落库，小时/日聚合由 env-api 的定时任务负责，避免两个进程重复计算
+ts:
+  job:
+    enabled: false
+
+logging:
+  level:
+    root: info
+    com.envmon: debug

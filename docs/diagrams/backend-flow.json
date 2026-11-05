@@ -1,0 +1,181 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "HJ 212 报文接入与报警后端流程",
+    "locale": "zh-CN",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {
+      "id": "gw",
+      "label": "接入与校验"
+    },
+    {
+      "id": "data",
+      "label": "落库与判定"
+    },
+    {
+      "id": "alarm",
+      "label": "报警与触达"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p1",
+      "label": "拆包 · 校验",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "p2",
+      "label": "解密 · 去重 · 应答",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p3",
+      "label": "落库 · 判定 · 触达",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "report",
+    "frame",
+    "decrypt",
+    "idem",
+    "store",
+    "detect",
+    "push"
+  ],
+  "nodes": [
+    {
+      "id": "report",
+      "lane": "gw",
+      "col": 0,
+      "type": "external",
+      "label": "数采仪上报",
+      "sublabel": "HJ212 · TCP",
+      "height": 52
+    },
+    {
+      "id": "frame",
+      "lane": "gw",
+      "col": 1,
+      "type": "backend",
+      "label": "拆包与 CRC",
+      "sublabel": "半包 / 粘包",
+      "height": 52
+    },
+    {
+      "id": "decrypt",
+      "lane": "gw",
+      "col": 2,
+      "type": "security",
+      "label": "解密与解析",
+      "sublabel": "SM4 · CN 分流",
+      "height": 52
+    },
+    {
+      "id": "idem",
+      "lane": "gw",
+      "col": 3,
+      "type": "backend",
+      "label": "幂等与应答",
+      "sublabel": "QN 去重",
+      "height": 52
+    },
+    {
+      "id": "store",
+      "lane": "data",
+      "col": 4,
+      "type": "database",
+      "label": "入库与计算",
+      "sublabel": "时序 / 关系 + 附录 G",
+      "height": 52
+    },
+    {
+      "id": "detect",
+      "lane": "data",
+      "col": 5,
+      "type": "backend",
+      "label": "报警判定",
+      "sublabel": "规则引擎",
+      "height": 52
+    },
+    {
+      "id": "push",
+      "lane": "alarm",
+      "col": 5,
+      "type": "messagebus",
+      "label": "多端推送",
+      "sublabel": "飞书 / 小程序 / 短信",
+      "height": 52
+    }
+  ],
+  "edges": [
+    {
+      "from": "report",
+      "to": "frame",
+      "label": "原始报文",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "frame",
+      "to": "decrypt",
+      "label": "校验通过",
+      "role": "main"
+    },
+    {
+      "from": "decrypt",
+      "to": "idem",
+      "role": "main"
+    },
+    {
+      "from": "idem",
+      "to": "store",
+      "role": "main"
+    },
+    {
+      "from": "store",
+      "to": "detect",
+      "role": "main"
+    },
+    {
+      "from": "detect",
+      "to": "push",
+      "label": "事件",
+      "role": "main"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "先应答，后落库",
+      "items": [
+        "先应答后落库：QN + MN 幂等，补传重发不重复",
+        "CRC 失败与解密失败均隔离，不进入业务库"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "一个报文，两条数据线",
+      "items": [
+        "监测数据入时序库，参数与状态入关系库",
+        "小时 ≥45 有效分钟、日均 ≥75% 有效小时"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "触达必须可追",
+      "items": [
+        "报警先落库再异步推送，推送失败不影响报警",
+        "失败 3 次自动降级渠道，P1 超时自动升级"
+      ]
+    }
+  ]
+}

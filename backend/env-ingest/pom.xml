@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.envmon</groupId>
+    <artifactId>env-monitor</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>env-ingest</artifactId>
+  <name>env-ingest</name>
+  <description>HJ212 接入层（Netty 独立进程）</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.envmon</groupId>
+      <artifactId>env-common</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.envmon</groupId>
+      <artifactId>env-dao</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.envmon</groupId>
+      <artifactId>env-ts</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.netty</groupId>
+      <artifactId>netty-all</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk15on</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>com.envmon.ingest.EnvIngestApplication</mainClass>
+          <classifier>exec</classifier>
+        </configuration>
+        <executions>
+          <execution>
+            <goals><goal>repackage</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

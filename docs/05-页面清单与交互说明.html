@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>05 · 页面清单与交互说明</title>
+<link rel="stylesheet" href="assets/doc.css">
+</head>
+<body>
+<div class="page">
+
+<div class="fnav">
+  <a href="01-需求规格说明书.html">01 需求规格</a>
+  <a href="02-数据库设计.html">02 库表设计</a>
+  <a href="03-HJ212-2025接入方案.html">03 接入方案</a>
+  <a href="04-报警与推送设计.html">04 报警推送</a>
+  <a class="cur" href="05-页面清单与交互说明.html">05 页面清单</a>
+  <a href="diagrams/architecture.html">技术架构图</a>
+  <a href="diagrams/backend-flow.html">后端流程图</a>
+</div>
+
+<div class="doc-head">
+  <div class="doc-kicker">交互设计说明书 · IA v1.0</div>
+  <h1>Web 与小程序页面清单</h1>
+  <p class="doc-sub">46 个 Web 页面 + 15 个小程序页面，含路由、角色、核心元素与关键交互；附通用组件与状态色规范。</p>
+  <div class="doc-meta">
+    <span><b>Web</b>Vue3 + Element Plus</span>
+    <span><b>小程序</b>uni-app</span>
+    <span><b>页面</b>Web 46 / 小程序 15</span>
+    <span><b>日期</b>2026-11-04</span>
+  </div>
+</div>
+
+<div class="doc-body">
+
+<h2 id="s0">目录</h2>
+<div class="toc">
+  <a href="#s1"><span class="n">01</span>设计规范与状态色板</a>
+  <a href="#s2"><span class="n">02</span>信息架构总览</a>
+  <a href="#s3"><span class="n">03</span>Web 页面清单（46）</a>
+  <a href="#s4"><span class="n">04</span>小程序页面清单（15）</a>
+  <a href="#s5"><span class="n">05</span>关键交互流程</a>
+  <a href="#s6"><span class="n">06</span>通用组件规范</a>
+  <a href="#s7"><span class="n">07</span>空态、异常态与权限态</a>
+  <a href="#s8"><span class="n">08</span>原型优先级</a>
+</div>
+
+<h2 id="s1">01 设计规范与状态色板</h2>
+
+<h3>1.1 状态色（两套，不可混用）</h3>
+<table>
+<thead><tr><th style="width:120px">语义</th><th style="width:110px">色值</th><th>使用场景</th></tr></thead>
+<tbody>
+<tr><td>正常</td><td><span class="tag ok">#067A5B</span></td><td>站房正常、数据有效 N</td></tr>
+<tr><td>异常 / 预警</td><td><span class="tag warn">#B45309</span></td><td>站房异常、P2 报警</td></tr>
+<tr><td>超标 / 故障</td><td><span class="tag danger">#B91C1C</span></td><td>超标、P1 报警、离线超时</td></tr>
+<tr><td>停运</td><td><span class="tag">#64748B</span></td><td>站房停运、设备停用</td></tr>
+<tr><td>维护</td><td><span class="tag brand" style="background:#F3EEFF;border-color:#ddd0f7;color:#6D28D9">#6D28D9</span></td><td>维护中、校准中</td></tr>
+<tr><td>离线</td><td><span class="tag">#94A3B8</span></td><td>数采仪离线、视频离线</td></tr>
+</tbody>
+</table>
+<div class="note warn">
+<span class="t">重要</span>
+<p>站房<strong>业务态</strong>（正常/异常/停运/维护）与数据<strong>设备态</strong>（超标/故障/离线/预警/停电）是两套枚举，颜色可以复用但字段必须分开。合成一个字段是最常见的建模错误。</p>
+</div>
+
+<h3>1.2 栅格与尺寸</h3>
+<table>
+<thead><tr><th style="width:130px">项</th><th>规范</th></tr></thead>
+<tbody>
+<tr><td>画布</td><td>最小 1366×768，设计基准 1440×900</td></tr>
+<tr><td>侧边栏</td><td>展开 208px / 收起 64px，可滚动，二级菜单手风琴</td></tr>
+<tr><td>内容区</td><td>左右 padding 20px，卡片间距 16px</td></tr>
+<tr><td>字号</td><td>正文 14 / 辅助 12 / 标题 16 / 页面标题 20 / KPI 数字 28</td></tr>
+<tr><td>表格</td><td>行高 44px，表头吸顶，首列固定，操作列右固定</td></tr>
+<tr><td>弹窗</td><td>表单类 640px / 详情类 880px / 抽屉 560px</td></tr>
+</tbody>
+</table>
+
+<h2 id="s2">02 信息架构总览</h2>
+<pre><code>工作台（按角色 4 套：主管 / 工程师 / 监管 / 企业）
+├─ 站房管理 ─ 站房列表 · 站房详情 · 排口 · 批量导入
+├─ 在线监测
+│   ├─ 数字站房
+│   ├─ 原始数据 ─ 实时/分钟/小时/日 · 缺失 · 质控
+│   ├─ 参数监控
+│   ├─ 数据报表
+│   ├─ 实时一览
+│   ├─ 联网监测
+│   ├─ 报警记录 ─ 列表 · 详情 · 规则配置
+│   └─ 远程反控
+├─ 运维服务 ─ 运维计划 · 任务 · 运维记录 · 审核 · 考勤 · 执法检查
+├─ 车辆监控
+├─ 物资管理 ─ 库存 · 申请 · 归还 · 消耗 · 流向
+├─ 仪器配置管理
+├─ 数据分析 ─ 考核 · 排名 · 诊断
+├─ 档案库
+├─ 知识中心
+├─ 日志查询
+└─ 系统管理 ─ 租户 · 组织 · 用户 · 角色 · 字典 · 区域 · 消息中心</code></pre>
+
+<h2 id="s3">03 Web 页面清单</h2>
+<p class="small">角色缩写：SUP 超管 / REG 监管 / ORG 运维管理员 / MGR 主管 / ENG 工程师 / ENT 企业</p>
+
+<h3>3.1 工作台与站房（W01–W08）</h3>
+<table>
+<thead><tr><th style="width:60px">编号</th><th style="width:150px">页面</th><th style="width:170px">路由</th><th style="width:120px">角色</th><th>核心元素与交互</th></tr></thead>
+<tbody>
+<tr><td>W01</td><td>登录</td><td><code>/login</code></td><td>全部</td><td>账号密码 + 图形验证码；可选飞书扫码；失败 5 次锁定 15 分钟</td></tr>
+<tr><td>W02</td><td>工作台-主管</td><td><code>/workbench/mgr</code></td><td>MGR/ORG</td><td>5 个 KPI 卡（待审核/计划/待下发/执法/超期）+ 待办流 + 计划日历；KPI 点击下钻到对应列表</td></tr>
+<tr><td>W03</td><td>工作台-监管</td><td><code>/workbench/reg</code></td><td>REG</td><td>辖区态势（企业数/站房数/在线率/超标数/整改完成率）+ 超期督办 + 红黑榜</td></tr>
+<tr><td>W04</td><td>工作台-企业</td><td><code>/workbench/ent</code></td><td>ENT</td><td>本企业站房状态、近期运维记录、待签收整改单</td></tr>
+<tr><td>W05</td><td>站房列表</td><td><code>/station</code></td><td>SUP/ORG/MGR</td><td>四段筛选（区域/企业/站房/类型）+ 状态标签 + 批量导入导出；行点击进详情</td></tr>
+<tr><td>W06</td><td>站房详情</td><td><code>/station/:id</code></td><td>全部只读+</td><td>页签：基本信息 / 因子配置 / 设备 / 排口 / 运维履历 / 档案 / 二维码</td></tr>
+<tr><td>W07</td><td>站房编辑</td><td>抽屉</td><td>SUP/ORG/MGR</td><td>分步表单；经纬度支持地图选点；停运状态必填原因</td></tr>
+<tr><td>W08</td><td>批量导入</td><td><code>/station/import</code></td><td>SUP/ORG</td><td>下载模板 → 上传 → 校验结果（成功/失败行可下载）→ 确认导入</td></tr>
+</tbody>
+</table>
+
+<h3>3.2 在线监测（W09–W22）</h3>
+<table>
+<thead><tr><th style="width:60px">编号</th><th style="width:150px">页面</th><th style="width:170px">路由</th><th style="width:120px">角色</th><th>核心元素与交互</th></tr></thead>
+<tbody>
+<tr><td>W09</td><td>数字站房</td><td><code>/monitor/digital</code></td><td>全部</td><td>左侧三级树（搜索/全部/重点关注/停止运维）+ 右侧卡片墙；卡片=状态角标+照片+≤6 因子+责任人；底部双图例</td></tr>
+<tr><td>W10</td><td>原始数据</td><td><code>/data/raw</code></td><td>全部只读</td><td>8 个页签；时间快捷（6h/1d/3d）+ 自定义；因子勾选；"标记显示/未标记显示"双开关；表格↔曲线联动</td></tr>
+<tr><td>W11</td><td>数据详情</td><td>行展开/抽屉</td><td>全部只读</td><td>单点详情：原值、标记、报文原文（有权限才可见）、同刻其他因子</td></tr>
+<tr><td>W12</td><td>缺失数据</td><td><code>/data/missing</code></td><td>MGR/ORG</td><td>按小时分组；缺失原因归类；行操作"发起补召"</td></tr>
+<tr><td>W13</td><td>质控数据</td><td><code>/data/qc</code></td><td>MGR/ORG</td><td>标液核查/核查/混样三个子页签；合格率统计；不合格回溯影响时段</td></tr>
+<tr><td>W14</td><td>参数监控</td><td><code>/monitor/param</code></td><td>MGR/ORG</td><td>参数矩阵（设备×参数）+ 变更记录时间轴 + 差异高亮</td></tr>
+<tr><td>W15</td><td>参数变更详情</td><td>抽屉</td><td>MGR/ORG</td><td>旧值/新值/操作人/来源/证据文件；一键生成异常工单</td></tr>
+<tr><td>W16</td><td>数据报表</td><td><code>/report/data</code></td><td>全部只读</td><td>日报/月报/有效性三页签；导出 Excel/PDF；口径说明浮层</td></tr>
+<tr><td>W17</td><td>实时一览</td><td><code>/monitor/live</code></td><td>全部只读</td><td>站房×因子矩阵，异常行置顶，30s 刷新，支持全屏投屏</td></tr>
+<tr><td>W18</td><td>联网监测</td><td><code>/monitor/network</code></td><td>MGR/ORG</td><td>在线率、有效传输率、密钥到期、SN 状态、报文统计五块看板</td></tr>
+<tr><td>W19</td><td>单站联网详情</td><td><code>/monitor/network/:id</code></td><td>MGR/ORG</td><td>连接状态、最近报文流水、解密失败记录、密钥倒计时</td></tr>
+<tr><td>W20</td><td>报警记录</td><td><code>/alarm</code></td><td>全部</td><td>按级别/状态/时间筛选；行内快捷"认领/关闭"；批量操作</td></tr>
+<tr><td>W21</td><td>报警详情</td><td><code>/alarm/:id</code></td><td>全部</td><td>证据区（曲线区间+报文+照片）+ 处置时间轴 + 关联工单 + 发送记录</td></tr>
+<tr><td>W22</td><td>报警规则配置</td><td><code>/alarm/rule</code></td><td>SUP/ORG</td><td>规则列表 + 可视化编辑器（对象/条件/时长/抑制/渠道）+ 试算（用历史数据验证命中率）</td></tr>
+</tbody>
+</table>
+
+<h3>3.3 运维服务（W23–W32）</h3>
+<table>
+<thead><tr><th style="width:60px">编号</th><th style="width:150px">页面</th><th style="width:170px">路由</th><th style="width:120px">角色</th><th>核心元素与交互</th></tr></thead>
+<tbody>
+<tr><td>W23</td><td>运维计划</td><td><code>/ops/plan</code></td><td>MGR/ORG</td><td>月历（今日/历史/未计划/下月 四色）+ 列表切换；点击"未计划"下钻缺口清单；"添加运维计划"弹窗（区域/企业/站房类型/运维类型/站房/时间）</td></tr>
+<tr><td>W24</td><td>计划批量生成</td><td>弹窗</td><td>MGR</td><td>选站房类型+运维类型+周期（每周/每月）→ 预览生成条数 → 确认</td></tr>
+<tr><td>W25</td><td>未计划站房</td><td><code>/ops/plan/gap</code></td><td>MGR/ORG</td><td>缺口清单 + 批量排期 + 覆盖率进度条</td></tr>
+<tr><td>W26</td><td>任务列表</td><td><code>/ops/task</code></td><td>MGR/ORG/ENG</td><td>看板视图（待接单/进行中/待审核/已完成）+ 列表；超期红色角标；批量派单</td></tr>
+<tr><td>W27</td><td>任务详情</td><td><code>/ops/task/:id</code></td><td>同上</td><td>流转时间轴（下发/接单/到场/提交）、SLA 计时器、改派/退回、关联报警</td></tr>
+<tr><td>W28</td><td>运维记录</td><td><code>/ops/record</code></td><td>全部只读+</td><td>筛选（时间/类型/工程师）+ 列表 + 导出；状态标签（草稿/待审/通过/驳回）</td></tr>
+<tr><td>W29</td><td>记录详情/审核</td><td><code>/ops/record/:id</code></td><td>MGR/REG/ENT</td><td>作业项逐条展示（含标准值对比）、照片九宫格（带水印）、签名、物资消耗；通过/驳回（必填原因）</td></tr>
+<tr><td>W30</td><td>痕迹核验</td><td><code>/ops/verify</code></td><td>REG/MGR</td><td>两张清单：疑似虚假标记 / 漏标；支持一键生成核查任务</td></tr>
+<tr><td>W31</td><td>考勤记录</td><td><code>/ops/attendance</code></td><td>MGR/ORG</td><td>日历热力图 + 明细；异地打卡高亮</td></tr>
+<tr><td>W32</td><td>轨迹回放</td><td><code>/ops/track/:userId</code></td><td>MGR/ORG</td><td>地图轨迹 + 站点停留气泡 + 时间轴拖动</td></tr>
+</tbody>
+</table>
+
+<h3>3.4 物资 / 车辆 / 仪器（W33–W38）</h3>
+<table>
+<thead><tr><th style="width:60px">编号</th><th style="width:150px">页面</th><th style="width:170px">路由</th><th style="width:120px">角色</th><th>核心元素与交互</th></tr></thead>
+<tbody>
+<tr><td>W33</td><td>库存管理</td><td><code>/inv/stock</code></td><td>ORG/MGR</td><td>按仓库/类别；批次与有效期列；低库存与临期预警区；入库/出库/调拨/盘点</td></tr>
+<tr><td>W34</td><td>物资申请</td><td><code>/inv/apply</code></td><td>ENG/MGR</td><td>申请单 + 关联任务；审批流；出库后自动生成流水</td></tr>
+<tr><td>W35</td><td>物资归还</td><td><code>/inv/return</code></td><td>ENG/MGR</td><td>按申请单退回，记录余量；自动回补库存</td></tr>
+<tr><td>W36</td><td>运营物资消耗</td><td><code>/inv/consume</code></td><td>ORG/MGR</td><td>按站房/月度/物资三维统计；与运维记录更换次数对比（异常差异标红）</td></tr>
+<tr><td>W37</td><td>物资流向明细</td><td><code>/inv/flow</code></td><td>ORG/MGR</td><td>单件追溯：入库→出库→用于哪个站房/设备/任务→剩余；支持扫码查</td></tr>
+<tr><td>W38</td><td>车辆监控</td><td><code>/vehicle</code></td><td>ORG/MGR</td><td>地图实时位置 + 车辆台账 + 里程统计；点击车看当日轨迹</td></tr>
+</tbody>
+</table>
+
+<h3>3.5 仪器 / 监管 / 分析 / 系统（W39–W46）</h3>
+<table>
+<thead><tr><th style="width:60px">编号</th><th style="width:150px">页面</th><th style="width:170px">路由</th><th style="width:120px">角色</th><th>核心元素与交互</th></tr></thead>
+<tbody>
+<tr><td>W39</td><td>仪器配置管理</td><td><code>/device</code></td><td>MGR/ORG</td><td>台账列表（分析仪/数采仪/流量计分组）+ SN/固件/联网状态；更换履历入口</td></tr>
+<tr><td>W40</td><td>设备详情</td><td><code>/device/:id</code></td><td>MGR/ORG</td><td>基本信息 + 因子绑定 + 参数备案对比 + 更换履历 + 证书</td></tr>
+<tr><td>W41</td><td>执法检查</td><td><code>/law/inspection</code></td><td>REG/ORG/ENT</td><td>检查列表 + 新建检查（选模板/站房）→ 现场取证 → 生成问题清单</td></tr>
+<tr><td>W42</td><td>整改通知单</td><td><code>/law/rectify</code></td><td>REG/ENT/ORG</td><td>通知单列表 + 详情（问题/依据/期限）；企业上传整改材料；监管复核；超期红色</td></tr>
+<tr><td>W43</td><td>数据分析</td><td><code>/analysis</code></td><td>REG/ORG/MGR</td><td>考核评分卡 + 多单位横向对比 + 有效率趋势 + 报警分布</td></tr>
+<tr><td>W44</td><td>日志查询</td><td><code>/log</code></td><td>SUP/REG/ORG</td><td>操作日志（含改前改后 diff）、登录日志；只读，导出需审批</td></tr>
+<tr><td>W45</td><td>档案库 / 知识中心</td><td><code>/doc</code> <code>/kb</code></td><td>全部只读+</td><td>按站房/分类树；版本与有效期；"一点一档"一键打包下载</td></tr>
+<tr><td>W46</td><td>系统管理</td><td><code>/sys/*</code></td><td>SUP/ORG</td><td>租户/组织/用户/角色/字典/区域/消息中心（渠道、模板、发送记录、值班表）</td></tr>
+</tbody>
+</table>
+
+<h2 id="s4">04 小程序页面清单</h2>
+<table>
+<thead><tr><th style="width:60px">编号</th><th style="width:150px">页面</th><th style="width:120px">角色</th><th>核心元素与交互</th></tr></thead>
+<tbody>
+<tr><td>M01</td><td>首页</td><td>ENG/MGR</td><td>今日任务数、待处理报警、待办；顶部"扫一扫"入口；订阅消息授权引导</td></tr>
+<tr><td>M02</td><td>任务列表</td><td>ENG</td><td>待接单/进行中/已完成分段；下拉刷新；超期红色</td></tr>
+<tr><td>M03</td><td>任务详情</td><td>ENG</td><td>站房信息 + 一键导航 + 接单 + 打卡 + 开始作业</td></tr>
+<tr><td>M04</td><td>扫码</td><td>ENG</td><td>扫站房码校验站房与任务是否匹配；不匹配禁止开始</td></tr>
+<tr><td>M05</td><td>现场打卡</td><td>ENG</td><td>定位 + 距离校验 + 人脸/拍照；超出 300m 提示"异地打卡"</td></tr>
+<tr><td>M06</td><td>作业表单</td><td>ENG</td><td>按模板动态渲染；数值项显示标准范围；不合格项必填说明</td></tr>
+<tr><td>M07</td><td>拍照上传</td><td>ENG</td><td>自动水印（时间/经纬度/站房/人）；仅拍照不可从相册选</td></tr>
+<tr><td>M08</td><td>物资领用</td><td>ENG</td><td>在作业中选试剂/备件；自动带出库存；提交后生成出库单</td></tr>
+<tr><td>M09</td><td>签名提交</td><td>ENG</td><td>手写签名 → 提交 → 提示"待主管审核"</td></tr>
+<tr><td>M10</td><td>报警列表</td><td>ENG/MGR</td><td>按级别分组；左滑认领；点击进详情</td></tr>
+<tr><td>M11</td><td>报警详情</td><td>ENG/MGR</td><td>指标卡 + 曲线缩略 + 一键生成工单 + 处置说明</td></tr>
+<tr><td>M12</td><td>数据查看</td><td>ENG</td><td>本片区站房列表 → 实时值 + 24h 曲线 + 标记色块</td></tr>
+<tr><td>M13</td><td>消息设置</td><td>全部</td><td>订阅消息授权管理、免打扰、渠道偏好</td></tr>
+<tr><td>M14</td><td>我的</td><td>全部</td><td>个人信息、证书到期提醒、我的统计（本月工单/及时率）</td></tr>
+<tr><td>M15</td><td>知识库</td><td>ENG</td><td>SOP 检索、故障案例、扫码查设备手册</td></tr>
+</tbody>
+</table>
+
+<h2 id="s5">05 关键交互流程</h2>
+
+<h3>5.1 报警处置闭环</h3>
+<pre><code>规则命中 → 生成事件（OPEN）→ 消息中心按级别路由
+   ├─ 飞书卡片【认领】→ 回写 ACK → 其他端 5s 内同步
+   ├─ 小程序列表点击 → 认领 → 填处置说明
+   └─ 15 分钟未认领 → 升级主管 → 30 分钟 → 管理员 + 短信
+处置方式三选一：
+   ① 生成维修工单（跳任务创建，预填站房/类型/来源=报警）
+   ② 标记误报（填原因 → 回流到规则优化清单）
+   ③ 转派他人（选人 + 备注）
+关闭条件：必须有处置说明；涉及数据的必须附现场照片或核查结论</code></pre>
+
+<h3>5.2 运维作业闭环（小程序）</h3>
+<pre><code>主管排计划 → 自动生成任务 → 下发
+  → 工程师接单（计时开始）
+  → 出发（可选导航）
+  → 到场打卡（定位 + 人脸，≤300m）
+  → 扫站房码（校验任务匹配）
+  → 按模板填报（离线可缓存）
+  → 拍照 / 领用物资 / 校准数据录入
+  → 签名提交
+  → 主管审核（通过 / 驳回填原因）
+  → 归档 + 生成运维台账 + 触发下一次计划建议</code></pre>
+
+<h3>5.3 数据 → 工单下钻</h3>
+<pre><code>原始数据页发现异常（如恒值 13 分钟）
+  → 选中区间 → 右键/按钮"生成异常工单"
+  → 弹窗预填：站房、因子、时间区间、异常描述、证据截图
+  → 指派工程师 → 任务来源标记 ALARM/MANUAL
+  → 处理完成后，工单与数据区间双向关联，审计可查</code></pre>
+
+<h3>5.4 计划排期</h3>
+<pre><code>选择月份 → 系统按规则生成草稿（站房类型 × 运维类型 × 周期）
+  → 日历展示：已排（蓝）/ 未排（橙）/ 冲突（红）
+  → 点"未计划"数字 → 下钻缺口清单 → 批量勾选 → 一键排期
+  → 提交审批 → 生效 → 到期自动生成任务</code></pre>
+
+<h2 id="s6">06 通用组件规范</h2>
+
+<h3>6.1 四段式筛选器（全局复用）</h3>
+<table>
+<thead><tr><th style="width:130px">段</th><th>行为</th></tr></thead>
+<tbody>
+<tr><td>区域</td><td>级联选择，默认取用户数据权限范围</td></tr>
+<tr><td>企业</td><td>依赖区域，支持搜索；选"全部"则不限</td></tr>
+<tr><td>站房</td><td>依赖企业，显示"站房名 + 类型"；支持多选</td></tr>
+<tr><td>类型 / 状态</td><td>按页面语义变化（运维类型/报警级别/设备类别）</td></tr>
+</tbody>
+</table>
+<p class="small">规则：上一级变更自动清空下一级；筛选条件写入 URL query，便于分享与刷新保持；"查询"与"重置"固定右侧。</p>
+
+<h3>6.2 状态标签</h3>
+<table>
+<thead><tr><th style="width:150px">类型</th><th>取值与文案</th></tr></thead>
+<tbody>
+<tr><td>站房业务态</td><td>正常 / 异常 / 停运 / 维护</td></tr>
+<tr><td>任务状态</td><td>待接单 / 已接单 / 到场 / 待审核 / 已完成 / 已退回 / 已超期</td></tr>
+<tr><td>记录状态</td><td>草稿 / 待审核 / 已通过 / 已驳回</td></tr>
+<tr><td>报警状态</td><td>待处理 / 处理中 / 已关闭 / 误报</td></tr>
+<tr><td>设备联网</td><td>已注册 / 已激活 / 已确认 / 未确认</td></tr>
+</tbody>
+</table>
+
+<h3>6.3 因子透视表</h3>
+<ul>
+<li>行 = 时间（倒序，固定首列），列 = 因子（可勾选、可拖拽排序、可冻结前 3 列）。</li>
+<li>每个因子单元格显示"值 + 标记"，非 N 标记用底色块，N 淡化显示。</li>
+<li>顶部固定工具条：时间快捷、因子选择、标记开关、曲线开关、导出。</li>
+<li>超过 8 因子时横向滚动，表头与首列双向吸顶。</li>
+</ul>
+
+<h2 id="s7">07 空态、异常态与权限态</h2>
+<table>
+<thead><tr><th style="width:130px">场景</th><th>表现</th></tr></thead>
+<tbody>
+<tr><td>无数据</td><td>插画 + 一句说明 + 主动作（如"去添加计划"），不要只显示"暂无数据"</td></tr>
+<tr><td>无权限</td><td>显示"无访问权限"并说明需要的角色，不隐藏菜单（隐藏会让用户以为系统坏了）</td></tr>
+<tr><td>加载失败</td><td>错误码 + 重试按钮 + 复制错误 ID</td></tr>
+<tr><td>数据延迟</td><td>顶部黄条"数据更新于 14:20，延迟 3 分钟"</td></tr>
+<tr><td>离线（小程序）</td><td>顶部红条"当前离线，填报内容将本地保存"，提交按钮改为"保存待提交"</td></tr>
+<tr><td>长时间无操作</td><td>30 分钟提示，60 分钟自动登出</td></tr>
+</tbody>
+</table>
+
+<h2 id="s8">08 原型优先级</h2>
+<table>
+<thead><tr><th style="width:70px">批次</th><th>页面</th><th>目的</th></tr></thead>
+<tbody>
+<tr><td>第一批</td><td>W02 工作台、W09 数字站房、W10 原始数据、W23 运维计划</td><td>给甲方看"系统长什么样"，定视觉与信息密度</td></tr>
+<tr><td>第二批</td><td>W26/W27 任务、W29 记录审核、M03–M09 小程序作业流</td><td>验证运维闭环是否顺手，这是能否落地的关键</td></tr>
+<tr><td>第三批</td><td>W20/W21 报警、W18 联网监测、W43 数据分析</td><td>支撑监管汇报与考核</td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<span class="t">原型交付建议</span>
+<p>用 Figma 或即时设计做可点击原型，优先把"计划 → 任务 → 执行 → 审核"这条主线串成可演示的完整流程。甲方评审时最容易被"点得动"打动，静态截图的说服力差很多。</p>
+</div>
+
+</div>
+
+<div class="doc-foot">
+  <span>污染源自动监控设施第三方运维信息管理系统 · 页面清单与交互说明 v1.0</span>
+  <span>2026-11-04</span>
+</div>
+
+</div>
+</body>
+</html>

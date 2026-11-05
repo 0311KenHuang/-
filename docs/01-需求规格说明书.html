@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>01 · 需求规格说明书 — 污染源自动监控设施第三方运维信息管理系统</title>
+<link rel="stylesheet" href="assets/doc.css">
+</head>
+<body>
+<div class="page">
+
+<div class="fnav">
+  <a class="cur" href="01-需求规格说明书.html">01 需求规格</a>
+  <a href="02-数据库设计.html">02 库表设计</a>
+  <a href="03-HJ212-2025接入方案.html">03 接入方案</a>
+  <a href="04-报警与推送设计.html">04 报警推送</a>
+  <a href="05-页面清单与交互说明.html">05 页面清单</a>
+  <a href="diagrams/architecture.html">技术架构图</a>
+  <a href="diagrams/backend-flow.html">后端流程图</a>
+</div>
+
+<div class="doc-head">
+  <div class="doc-kicker">需求规格说明书 · SRS v1.0</div>
+  <h1>污染源自动监控设施<br>第三方运维信息管理系统</h1>
+  <p class="doc-sub">面向生态环境主管部门与第三方运维单位的「数据 + 运维 + 证据链」一体化平台，依据 HJ 212—2025 建设。</p>
+  <div class="doc-meta">
+    <span><b>版本</b>v1.0（评审稿）</span>
+    <span><b>日期</b>2026-11-04</span>
+    <span><b>标准</b>HJ 212—2025（2026-01-01 实施）</span>
+    <span><b>参考</b>HJ 75/76/355、附录 G</span>
+    <span><b>状态</b>待甲方确认</span>
+  </div>
+</div>
+
+<div class="doc-body">
+
+<h2 id="s0">目录</h2>
+<div class="toc">
+  <a href="#s1"><span class="n">01</span>项目背景与建设目标</a>
+  <a href="#s2"><span class="n">02</span>建设范围与边界</a>
+  <a href="#s3"><span class="n">03</span>角色定义与权限矩阵</a>
+  <a href="#s4"><span class="n">04</span>业务主线：运维证据链</a>
+  <a href="#s5"><span class="n">05</span>功能需求清单（26 个模块）</a>
+  <a href="#s6"><span class="n">06</span>关键业务规则（BR）</a>
+  <a href="#s7"><span class="n">07</span>非功能需求</a>
+  <a href="#s8"><span class="n">08</span>数据量与容量估算</a>
+  <a href="#s9"><span class="n">09</span>分期实施与验收标准</a>
+  <a href="#s10"><span class="n">10</span>待确认问题（Open Issues）</a>
+</div>
+
+<h2 id="s1">01 项目背景与建设目标</h2>
+
+<h3>1.1 背景</h3>
+<p>排污单位污染源自动监控设施普遍委托第三方运维。监管方长期面临三个问题：<strong>运维是否到位无法验证、监测数据真假难辨、运维台账靠纸质难追溯</strong>。HJ 212—2025 于 2026-01-01 实施、HJ 212—2017 同步废止，把监管视角从"看几个浓度值"推到"看设备身份、工作参数、原始信号、数据标记、操作日志"，为"穿透式监管"提供了数据基础。</p>
+<p>本系统要解决的正是这个缝隙：<strong>把标准的传输要求，落成一条可自证、可核查、可追责的运维证据链。</strong></p>
+
+<h3>1.2 建设目标</h3>
+<table>
+<thead><tr><th style="width:52px">编号</th><th>目标</th><th>可量化验收口径</th></tr></thead>
+<tbody>
+<tr><td>G1</td><td>数据接得全、接得准</td><td>支持 HJ 212—2025 全量报文接收，含监测数据、工作参数、设备状态、操作日志、原始信号；报文解析成功率 ≥ 99.9%</td></tr>
+<tr><td>G2</td><td>运维干得实、留得下痕</td><td>每一次巡检/校准/维修均可回溯到人、时间、位置、照片、耗材与设备参数变更</td></tr>
+<tr><td>G3</td><td>异常报得早、处置闭环</td><td>P1 报警从产生到触达 ≤ 60 秒；报警处置闭环率可统计</td></tr>
+<tr><td>G4</td><td>考核算得清、对得上</td><td>有效数据率、超标次数、到位率口径与附录 G 一致，与省/国发平台差异可解释</td></tr>
+<tr><td>G5</td><td>多端可用</td><td>Web 管理端 + 微信小程序 + 飞书 + 公众号，四端消息与权限一致</td></tr>
+</tbody>
+</table>
+
+<h2 id="s2">02 建设范围与边界</h2>
+
+<h3>2.1 范围内</h3>
+<ul>
+<li><strong>数据侧</strong>：HJ 212—2025 报文接入、解析、存储、有效性判定、统计报表、反控下发。</li>
+<li><strong>运维侧</strong>：站房与设备档案、运维计划、任务下发、现场执行、审核、考勤、车辆、物资。</li>
+<li><strong>监管侧</strong>：执法检查、整改通知单、整改回复、督办、考核排名。</li>
+<li><strong>触达侧</strong>：飞书（团队主通道）、微信公众号、微信小程序、短信（兜底）。</li>
+</ul>
+
+<h3>2.2 范围外（本期不做，写入合同避免蔓延）</h3>
+<table>
+<thead><tr><th>不做的事</th><th>原因 / 后续安排</th></tr></thead>
+<tbody>
+<tr><td>排污许可证核发与证后管理全流程</td><td>属许可证系统，本系统仅引用许可证号与许可排放限值</td></tr>
+<tr><td>环境质量自动站（空气站、水质站）的全套评价模型</td><td>本期仅按"站房"纳入运维管理，不做 AQI 等评价</td></tr>
+<tr><td>CEMS 仪器本身的检定/校准业务</td><td>计量检定由有资质机构承担，本系统只存报告与结果</td></tr>
+<tr><td>视频 AI 识别（冒黑烟、人员离岗）</td><td>二期，需单独算法预算</td></tr>
+<tr><td>碳排放核算与碳交易</td><td>标准已留编码扩展位，本期不实现</td></tr>
+</tbody>
+</table>
+
+<h2 id="s3">03 角色定义与权限矩阵</h2>
+
+<h3>3.1 角色</h3>
+<table>
+<thead><tr><th style="width:76px">代码</th><th style="width:150px">角色</th><th>职责</th><th>数据范围</th></tr></thead>
+<tbody>
+<tr><td><code>SUP</code></td><td>平台超级管理员</td><td>租户、组织、角色、字典、系统参数、全局审计</td><td>全部</td></tr>
+<tr><td><code>REG</code></td><td>监管用户（生态环境部门/园区）</td><td>查看辖区数据、执法检查、下发整改、督办、考核</td><td>本辖区</td></tr>
+<tr><td><code>ORG</code></td><td>运维单位管理员</td><td>本单位人员、合同、物资、计划审批、考核自查</td><td>本运维单位</td></tr>
+<tr><td><code>MGR</code></td><td>运维主管</td><td>排计划、派任务、审核运维记录、处理报警</td><td>所辖片区</td></tr>
+<tr><td><code>ENG</code></td><td>运维工程师</td><td>接单、到场打卡、执行作业、上传记录、上报故障</td><td>本人任务</td></tr>
+<tr><td><code>ENT</code></td><td>企业用户（排污单位）</td><td>查看本企业站房数据、确认运维记录、签收整改单</td><td>本企业</td></tr>
+</tbody>
+</table>
+
+<h3>3.2 权限矩阵</h3>
+<p class="small">● 全部读写　◐ 本组织/本片区读写　○ 只读　— 无权限</p>
+<table>
+<thead><tr><th>模块</th><th class="center">SUP</th><th class="center">REG</th><th class="center">ORG</th><th class="center">MGR</th><th class="center">ENG</th><th class="center">ENT</th></tr></thead>
+<tbody>
+<tr><td>工作台</td><td class="center">●</td><td class="center">●</td><td class="center">●</td><td class="center">●</td><td class="center">●</td><td class="center">●</td></tr>
+<tr><td>站房管理</td><td class="center">●</td><td class="center">○</td><td class="center">◐</td><td class="center">◐</td><td class="center">○</td><td class="center">○</td></tr>
+<tr><td>数字站房</td><td class="center">●</td><td class="center">○</td><td class="center">◐</td><td class="center">◐</td><td class="center">◐</td><td class="center">○</td></tr>
+<tr><td>原始数据 / 参数监控</td><td class="center">●</td><td class="center">○</td><td class="center">◐</td><td class="center">◐</td><td class="center">○</td><td class="center">○</td></tr>
+<tr><td>联网监测</td><td class="center">●</td><td class="center">○</td><td class="center">◐</td><td class="center">◐</td><td class="center">○</td><td class="center">—</td></tr>
+<tr><td>远程反控</td><td class="center">●</td><td class="center">—</td><td class="center">◐</td><td class="center">◐</td><td class="center">—</td><td class="center">—</td></tr>
+<tr><td>运维计划</td><td class="center">●</td><td class="center">○</td><td class="center">◐</td><td class="center">◐</td><td class="center">○</td><td class="center">—</td></tr>
+<tr><td>任务管理</td><td class="center">●</td><td class="center">○</td><td class="center">◐</td><td class="center">◐</td><td class="center">●</td><td class="center">—</td></tr>
+<tr><td>运维记录与审核</td><td class="center">●</td><td class="center">○</td><td class="center">◐</td><td class="center">◐</td><td class="center">◐（本人）</td><td class="center">○（本企业）</td></tr>
+<tr><td>考勤与轨迹</td><td class="center">●</td><td class="center">○</td><td class="center">◐</td><td class="center">◐</td><td class="center">○（本人）</td><td class="center">—</td></tr>
+<tr><td>车辆监控</td><td class="center">●</td><td class="center">○</td><td class="center">◐</td><td class="center">◐</td><td class="center">—</td><td class="center">—</td></tr>
+<tr><td>物资管理</td><td class="center">●</td><td class="center">—</td><td class="center">◐</td><td class="center">◐</td><td class="center">◐（领用）</td><td class="center">—</td></tr>
+<tr><td>仪器配置管理</td><td class="center">●</td><td class="center">○</td><td class="center">◐</td><td class="center">◐</td><td class="center">○</td><td class="center">—</td></tr>
+<tr><td>执法检查 / 整改</td><td class="center">●</td><td class="center">●</td><td class="center">◐（回复）</td><td class="center">◐（回复）</td><td class="center">○</td><td class="center">◐（签收）</td></tr>
+<tr><td>数据分析</td><td class="center">●</td><td class="center">○</td><td class="center">◐</td><td class="center">◐</td><td class="center">—</td><td class="center">○</td></tr>
+<tr><td>档案库 / 知识中心</td><td class="center">●</td><td class="center">○</td><td class="center">◐</td><td class="center">◐</td><td class="center">○</td><td class="center">○</td></tr>
+<tr><td>日志查询（审计）</td><td class="center">●</td><td class="center">○</td><td class="center">◐</td><td class="center">—</td><td class="center">—</td><td class="center">—</td></tr>
+<tr><td>系统管理</td><td class="center">●</td><td class="center">—</td><td class="center">◐（本单位）</td><td class="center">—</td><td class="center">—</td><td class="center">—</td></tr>
+<tr><td>消息中心</td><td class="center">●</td><td class="center">●</td><td class="center">◐</td><td class="center">◐</td><td class="center">●</td><td class="center">○</td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<span class="t">权限设计要点</span>
+<p>① 权限 = <strong>功能权限（菜单/按钮）× 数据权限（租户 → 组织 → 区域 → 站房）</strong>，两者必须同时校验，不能只在前端隐藏菜单。</p>
+<p>② 所有业务查询走统一数据权限拦截器，禁止在 SQL 里手写条件——否则一处漏写就是越权。</p>
+<p>③ 企业用户与监管用户是<strong>只读 + 流程参与</strong>角色，不得直接修改运维记录，只能"确认/退回"，修改必须由运维方发起，留痕。</p>
+</div>
+
+<h2 id="s4">04 业务主线：运维证据链</h2>
+<p>本系统的设计主轴不是"功能多"，而是<strong>六个环节必须能互相印证</strong>。任何一环断掉，甲方就有理由质疑运维真实性。</p>
+<table>
+<thead><tr><th style="width:44px">#</th><th style="width:120px">环节</th><th style="width:180px">载体</th><th>要证明的事</th><th>交叉校验</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>该做的</td><td>运维计划（月历四态）</td><td>应做尽做，"未计划"即缺口</td><td>计划覆盖率 = 已排期站房 / 应运维站房</td></tr>
+<tr><td>2</td><td>派了人</td><td>任务单 + 指派人</td><td>有明确责任人</td><td>任务必须来自计划，禁止"计划外任务"绕过</td></tr>
+<tr><td>3</td><td>到场了</td><td>电子围栏打卡 + 车辆轨迹 + 照片水印</td><td>人确实到了现场</td><td>打卡点与站房坐标距离 ≤ 300 m</td></tr>
+<tr><td>4</td><td>真干了</td><td>运维记录 + 物资消耗 + 参数变更</td><td>试剂真换了、参数真调了</td><td>更换记录 ⇄ 出库单 ⇄ 参数变更时间</td></tr>
+<tr><td>5</td><td>设备状态</td><td>数据标记（N/D/C/M/T/Td）</td><td>当时设备处于什么状态</td><td><strong>标记 ⇄ 运维记录</strong>：标了 M 必须有维护单</td></tr>
+<tr><td>6</td><td>有人负责</td><td>审核 + 审计日志</td><td>每一环都可追到人</td><td>审核人 ≠ 执行人；审计日志只追加</td></tr>
+</tbody>
+</table>
+
+<div class="note ok">
+<span class="t">核心差异化功能：标记 ⇄ 工单 双向核验</span>
+<p><strong>正向校验</strong>：数据标记为 C/M/D/Td 的时段，系统必须找到同站房、时间重叠的对应类型运维记录；找不到 → 产生「疑似虚假标记」预警。</p>
+<p><strong>反向校验</strong>：运维记录做了校准（C），但对应时段的数据标记不是 C（仍为 N）→ 产生「漏标」预警，直接影响有效数据率与考核。</p>
+<p>这一条是参考平台没有的，也是监管方最想要的能力，建议作为投标/汇报的第一亮点。</p>
+</div>
+
+<h2 id="s5">05 功能需求清单</h2>
+<p class="small">优先级：<span class="badge p0">P0</span> 首版必须交付　<span class="badge p1">P1</span> 二期首月　<span class="badge p2">P2</span> 后续迭代</p>
+
+<h3>M01 工作台（角色化）</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-01-01</td><td>KPI 卡片区</td><td>按角色渲染：待审核数、今日计划数、待下发数、执法检查数、超期事件数（红色计数，点击下钻）</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-01-02</td><td>待办中心</td><td>审核、派单、超期、整改、报警处置聚合为统一待办流，支持"一键处理"</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-01-03</td><td>运维计划日历</td><td>月视图，四色状态：今日计划 / 历史计划 / 未计划 / 下月计划；点击日期下钻当日任务</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-01-04</td><td>未计划站房看板</td><td>列出"本月应运维但未排期"的站房，支持批量排期（参考平台缺失）</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-01-05</td><td>辖区态势（REG）</td><td>企业数、站房数、在线率、超标数、整改完成率</td><td><span class="badge p1">P1</span></td></tr>
+</tbody>
+</table>
+
+<h3>M02 组织与系统管理</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-02-01</td><td>多租户管理</td><td>监管方、运维单位、企业三类租户；租户间数据物理隔离（tenant_id）</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-02-02</td><td>组织与人员</td><td>组织树、岗位、人员、资质证书（运维工证）及到期提醒</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-02-03</td><td>角色与权限</td><td>角色-菜单-按钮-数据范围四维配置；支持复制角色</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-02-04</td><td>数据字典</td><td>站房类型、运维类型、因子、标记、报警级别、物资类别等统一维护</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-02-05</td><td>区域管理</td><td>省/市/区县/园区四级，支持按区域授权</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-02-06</td><td>单点登录</td><td>账号密码 + 可选企业微信/飞书扫码；密码策略、登录失败锁定</td><td><span class="badge p1">P1</span></td></tr>
+</tbody>
+</table>
+
+<h3>M03 站房管理（主数据）</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-03-01</td><td>企业档案</td><td>统一社会信用代码、行业、排污许可证号、地址、联系人、重点排污单位标志</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-03-02</td><td>站房档案</td><td>站房编码（可读：企业简称+介质+序号）、名称、类型（废水/废气/VOC/垃圾焚烧/空气站/地下水）、经纬度、投运日期、责任运维单位、关注级别</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-03-03</td><td>排放口</td><td>排口编号、类型、执行标准、标准限值（分时段/分行业）、与站房 N:1 关联</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-03-04</td><td>站房状态</td><td>业务态：正常 / 异常 / 停运 / 维护，变更需填原因并留痕</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-03-05</td><td>站房二维码</td><td>生成唯一二维码，用于现场扫码巡检与身份核验</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-03-06</td><td>批量导入/导出</td><td>Excel 模板导入，带校验与错误行回显</td><td><span class="badge p0">P0</span></td></tr>
+</tbody>
+</table>
+
+<h3>M04 数字站房（卡片墙）</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-04-01</td><td>站房树</td><td>区域 → 企业 → 站房三级树，支持关键字、全部/重点关注/停止运维筛选、状态角标</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-04-02</td><td>站房卡片</td><td>状态角标、站房照片、实时监测值（≤6 个因子）、责任运维工程师与联系方式</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-04-03</td><td>双图例</td><td>站房业务态（正常/异常/停运/维护）与数据态（超标/故障/离线/预警/停电）分开渲染</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-04-04</td><td>快速跳转</td><td>卡片点击进入该站房原始数据 / 参数监控 / 运维记录</td><td><span class="badge p1">P1</span></td></tr>
+</tbody>
+</table>
+
+<h3>M05 原始数据</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-05-01</td><td>多粒度查询</td><td>实时 / 分钟 / 小时 / 日 四个粒度页签，时间快捷（6h/1d/3d）+ 自定义区间</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-05-02</td><td>因子透视表</td><td>行=时间，列=因子（数据值 + 标记位），因子可勾选、可排序、可冻结</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-05-03</td><td>标记渲染</td><td>只高亮非 N 标记（D/C/M/T/Td），N 淡化；支持"显示未标记"开关，NULL 标记单独用灰色区分</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-05-04</td><td>缺失数据页签</td><td>按小时列出缺失因子、缺失时长、缺失原因（停电/断网/停机/故障），支持发起补召</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-05-05</td><td>质控数据页签</td><td>标液核查、核查数据、混样数据独立页签，记录标准值/示值/误差/是否合格</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-05-06</td><td>表格/曲线联动</td><td>表格与曲线同屏联动，框选时间段自动缩放到曲线</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-05-07</td><td>异常值标识</td><td>恒值（死值）、负值、超量程、跳变自动打标，可一键生成报警</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-05-08</td><td>导出</td><td>按当前筛选与因子导出 Excel/CSV，超 5 万行走异步任务</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-05-09</td><td>原始信号</td><td>查看测量信号值、零点信号值、量程信号值、峰面积/谱图（HJ 212—2025 要求，独立数据域）</td><td><span class="badge p0">P0</span></td></tr>
+</tbody>
+</table>
+
+<h3>M06 参数监控</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-06-01</td><td>工作参数快照</td><td>量程上下限、校准浓度、校准系数/斜率/截距、消解温度与时长、采样模式</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-06-02</td><td>参数变更留痕</td><td>每次变更记录旧值/新值/操作人/时间/来源（现场端上报或人工），支持差异高亮</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-06-03</td><td>参数异常告警</td><td>变更频率超阈值、与备案参数不一致、量程被改小等自动告警</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-06-04</td><td>参数趋势</td><td>斜率/截距漂移曲线，判断仪器衰减趋势</td><td><span class="badge p2">P2</span></td></tr>
+</tbody>
+</table>
+
+<h3>M07 数据报表 · M08 实时一览</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-07-01</td><td>日报/月报</td><td>按站房+因子输出均值、最大值、最小值、超标次数、有效数据率</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-07-02</td><td>有效性报表</td><td>分钟有效率、小时有效率、日有效率，严格按附录 G 口径</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-07-03</td><td>运维月报</td><td>按运维单位/片区生成：计划完成率、故障次数、响应时长、更换备件，可导出 PDF</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-07-04</td><td>自定义报表</td><td>选择指标+维度，保存为报表模板，支持定时邮件/飞书推送</td><td><span class="badge p2">P2</span></td></tr>
+<tr><td>FR-08-01</td><td>实时一览</td><td>单页展示全部站房实时值矩阵，异常行置顶，30 秒自动刷新</td><td><span class="badge p0">P0</span></td></tr>
+</tbody>
+</table>
+
+<h3>M09 联网监测</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-09-01</td><td>在线状态</td><td>数采仪最后心跳时间、在线/离线、离线时长、离线次数统计</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-09-02</td><td>有效传输率</td><td>按附录 G 计算分钟/小时/日有效率，按站房、因子、时间段多维统计</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-09-03</td><td>设备身份</td><td>SN、CPUID、MAC、厂商识别码、注册状态、激活状态、<strong>联网确认状态</strong></td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-09-04</td><td>密钥状态</td><td>密钥版本、最近更新时间、到期倒计时（90 天）、更新失败次数</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-09-05</td><td>报文统计</td><td>收发报文数、应答成功率、CRC 错误数、重复报文数、补传报文数</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-09-06</td><td>时钟偏差</td><td>现场机时间与服务器时间偏差，超 60 秒告警并可一键校时</td><td><span class="badge p1">P1</span></td></tr>
+</tbody>
+</table>
+
+<h3>M10 报警中心（详见 04 文档）</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-10-01</td><td>规则配置</td><td>可视化配置：对象（站房/因子）+ 条件 + 持续时长 + 级别 + 抑制窗口 + 通知渠道</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-10-02</td><td>报警事件</td><td>列表、详情、证据（曲线/报文/照片）、关联工单</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-10-03</td><td>处置闭环</td><td>认领 → 处置 → 关闭；超时自动升级；支持误报标记与规则反馈</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-10-04</td><td>降噪</td><td>聚合、抑制、依赖抑制（父设备故障时不报子指标）、抖动过滤</td><td><span class="badge p0">P0</span></td></tr>
+</tbody>
+</table>
+
+<h3>M11 远程反控</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-11-01</td><td>校时</td><td>读取/设置现场机时间，指令下发与应答结果留痕</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-11-02</td><td>读取参数</td><td>远程读取量程、校准参数、运行状态</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-11-03</td><td>补传召唤</td><td>指定时间段重新上传历史数据</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-11-04</td><td>操作审批</td><td>反控属高风险操作，需二次确认 + 审批留痕 + 结果回执</td><td><span class="badge p0">P0</span></td></tr>
+</tbody>
+</table>
+
+<h3>M12 运维计划 · M13 任务管理</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-12-01</td><td>计划生成</td><td>按站房类型+运维类型+周期自动生成月度计划（如废水站：每周巡检 1 次、每月校准 1 次），可手工调整</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-12-02</td><td>计划日历</td><td>月/周视图，四色状态，支持拖拽改期（留痕）</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-12-03</td><td>计划审批</td><td>提交 → 主管/甲方审批 → 生效</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-13-01</td><td>任务下发</td><td>计划实例化为任务，支持单人/多人、指定时间窗</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-13-02</td><td>任务执行</td><td>接单 → 出发 → 到场（定位）→ 作业 → 提交；全流程时间戳</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-13-03</td><td>SLA 计时</td><td>响应时长、到场时长、修复时长三个指标独立计时</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-13-04</td><td>改派/退回</td><td>主管可改派，工程师可申请退回并填原因</td><td><span class="badge p1">P1</span></td></tr>
+</tbody>
+</table>
+
+<h3>M14 运维记录与审核</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-14-01</td><td>作业模板</td><td>按站房类型+运维类型配置检查项（数值/单选/多选/文本/拍照/签名）</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-14-02</td><td>记录填报</td><td>现场填写，支持离线缓存、断网续传</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-14-03</td><td>多媒体</td><td>照片/视频自动打水印（时间+经纬度+站房+人），不可本地篡改</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-14-04</td><td>物资联动</td><td>记录中选用试剂/备件时自动生成出库单，扣减库存</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-14-05</td><td>审核</td><td>通过/驳回（必填原因），驳回后重新提交；审核人不得为执行人</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-14-06</td><td>电子签名</td><td>执行人 + 审核人签名，生成不可篡改记录，支持导出 PDF 归档</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-14-07</td><td>痕迹核验</td><td>标记 ⇄ 记录双向核验，输出「疑似虚假标记」「漏标」清单</td><td><span class="badge p0">P0</span></td></tr>
+</tbody>
+</table>
+
+<h3>M15 考勤与轨迹 · M16 车辆监控</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-15-01</td><td>现场打卡</td><td>电子围栏（站房坐标 + 半径）+ 人脸/照片，记录到场与离场时间</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-15-02</td><td>考勤记录</td><td>按人/日/月统计出勤、在途、现场时长</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-15-03</td><td>轨迹回放</td><td>按日出勤轨迹与站点停留时长</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-16-01</td><td>车辆台账</td><td>车牌、车型、责任人、绑定片区</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-16-02</td><td>实时位置</td><td>接入 GPS/北斗终端或手机定位，地图展示</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-16-03</td><td>里程与油耗</td><td>月度统计，用于成本核算</td><td><span class="badge p2">P2</span></td></tr>
+</tbody>
+</table>
+
+<h3>M17 物资管理</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-17-01</td><td>物资档案</td><td>试剂/标液/备件/耗材分类，规格、单位、有效期、安全库存</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-17-02</td><td>库存管理</td><td>入库、出库、调拨、盘点；批次与有效期管理</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-17-03</td><td>领用申请</td><td>工程师申请 → 主管审批 → 出库，关联任务单</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-17-04</td><td>物资归还</td><td>未用完退回，记录余量</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-17-05</td><td>物资消耗台账</td><td>按站房/月度统计消耗量，支撑成本核算与考核</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-17-06</td><td>流向追溯</td><td>每一瓶试剂从入库到用到哪个站房哪台仪器全程可查（防虚报更换）</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-17-07</td><td>有效期预警</td><td>临期 30 天预警，过期禁止出库</td><td><span class="badge p1">P1</span></td></tr>
+</tbody>
+</table>
+
+<h3>M18 仪器配置管理</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-18-01</td><td>设备台账</td><td>分析仪/数采仪/流量计分列：厂商、型号、SN、CCEP 证书、量程、固件版本、投运日期</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-18-02</td><td>设备-因子绑定</td><td>一台仪器支持的因子、量程、单位、检出限</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-18-03</td><td>更换履历</td><td>更换时间、原因、旧件 SN、新件 SN、操作人、照片</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-18-04</td><td>备案信息比对</td><td>备案参数 vs 实际参数自动比对，差异告警</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-18-05</td><td>证书到期</td><td>CCEP、检定证书、运维资质到期提醒</td><td><span class="badge p1">P1</span></td></tr>
+</tbody>
+</table>
+
+<h3>M19 档案库 · M20 知识中心</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-19-01</td><td>档案分类</td><td>合同、验收报告、比对监测报告、备案资料、整改材料、运维台账</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-19-02</td><td>上传与版本</td><td>按站房/企业归档，支持多版本与有效期</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-19-03</td><td>一键归档</td><td>按站房导出"一点一档"压缩包，供检查调阅</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-20-01</td><td>知识文章</td><td>SOP、故障案例、标准规范、培训材料，支持全文检索</td><td><span class="badge p2">P2</span></td></tr>
+<tr><td>FR-20-02</td><td>故障案例库</td><td>故障现象 → 原因 → 处置 → 备件，与工单互链</td><td><span class="badge p2">P2</span></td></tr>
+</tbody>
+</table>
+
+<h3>M21 执法检查与整改</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-21-01</td><td>检查任务</td><td>监管方创建检查计划，指定企业/站房/检查项模板</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-21-02</td><td>现场取证</td><td>检查记录、问题清单、照片、录音</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-21-03</td><td>整改通知单</td><td>生成带编号的通知单，明确问题、依据、期限、责任人</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-21-04</td><td>整改回复</td><td>企业/运维方上传整改材料，监管方复核，支持延期申请</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-21-05</td><td>督办</td><td>超期未整改自动升级督办，纳入考核扣分</td><td><span class="badge p1">P1</span></td></tr>
+</tbody>
+</table>
+
+<h3>M22 数据分析 · M23 日志查询</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-22-01</td><td>运维考核</td><td>按运维单位/片区评分：计划完成率、及时率、有效率、报警闭环率、扣分项</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-22-02</td><td>排名与对比</td><td>多站房/多单位横向对比，红黑榜</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-22-03</td><td>异常诊断</td><td>数据与工况/用电逻辑比对，识别"治污设施未开""数据与生产不符"</td><td><span class="badge p2">P2</span></td></tr>
+<tr><td>FR-23-01</td><td>操作审计</td><td>登录、查询、导出、修改、审批、反控全量记录，<strong>只追加不可删</strong>，保留 ≥3 年</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-23-02</td><td>数据操作日志</td><td>参数修改、标记变更、审核动作的字段级前后值</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-23-03</td><td>登录日志</td><td>IP、设备、失败原因</td><td><span class="badge p1">P1</span></td></tr>
+</tbody>
+</table>
+
+<h3>M24 消息中心 · M25 移动端 · M26 接入网关</h3>
+<table>
+<thead><tr><th style="width:96px">编号</th><th style="width:170px">功能</th><th>说明</th><th style="width:60px">优先级</th></tr></thead>
+<tbody>
+<tr><td>FR-24-01</td><td>渠道管理</td><td>飞书、公众号、小程序订阅消息、短信、站内信统一配置与开关</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-24-02</td><td>模板管理</td><td>按事件类型维护各渠道模板与变量</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-24-03</td><td>路由与值班</td><td>按报警级别+时段+值班表决定发给谁、走哪个渠道</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-24-04</td><td>发送记录</td><td>送达/失败/重试，失败自动降级渠道</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-25-01</td><td>扫码巡检</td><td>扫站房码进入作业页，自动带出检查项</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-25-02</td><td>任务与报警</td><td>待办任务、报警列表、一键认领</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-25-03</td><td>数据查看</td><td>本片区站房实时值、曲线、标记</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-25-04</td><td>离线作业</td><td>无网环境填报并缓存，恢复后自动提交</td><td><span class="badge p1">P1</span></td></tr>
+<tr><td>FR-26-01</td><td>TCP 接入</td><td>监听现场机长连接，支持万级并发、心跳、断线重连</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-26-02</td><td>HTTP 接入</td><td>支持 HTTP/HTTPS 上报，兼容部分数采仪</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-26-03</td><td>协议兼容</td><td>同时支持 HJ 212—2025 与 2017 存量设备，按报文版本分流</td><td><span class="badge p0">P0</span></td></tr>
+<tr><td>FR-26-04</td><td>加解密</td><td>SM4 解密、密钥缓存、解密失败隔离</td><td><span class="badge p0">P0</span></td></tr>
+</tbody>
+</table>
+
+<h2 id="s6">06 关键业务规则</h2>
+<table>
+<thead><tr><th style="width:76px">编号</th><th style="width:160px">规则</th><th>定义</th></tr></thead>
+<tbody>
+<tr><td>BR-01</td><td>计划覆盖率</td><td>= 本月已排期站房数 ÷ 本月应运维站房数。应运维站房 = 状态为"正常/异常"且合同在有效期内的站房</td></tr>
+<tr><td>BR-02</td><td>计划外任务</td><td>故障类任务允许计划外创建，但必须关联报警或故障上报；其他类型禁止</td></tr>
+<tr><td>BR-03</td><td>到场判定</td><td>打卡点与站房坐标距离 ≤ 300 m 且人脸比对通过，才计为"到场"；否则标记"异地打卡"</td></tr>
+<tr><td>BR-04</td><td>审核不相容</td><td>审核人不得为执行人；同一记录被驳回 ≥3 次自动升级至运维单位管理员</td></tr>
+<tr><td>BR-05</td><td>标记核验</td><td>数据标记 C/M/D/Td 的时段，必须存在时间重叠的对应运维记录，否则生成"疑似虚假标记"</td></tr>
+<tr><td>BR-06</td><td>漏标核验</td><td>存在校准记录但对应时段标记为 N，生成"漏标"；校准前后各 30 分钟为必标窗口</td></tr>
+<tr><td>BR-07</td><td>小时数据有效</td><td>该小时内有效分钟数据 ≥ 45 个，该小时值才有效（附录 G）</td></tr>
+<tr><td>BR-08</td><td>日数据有效</td><td>该日有效小时数 ≥ 75%（18 小时），日均值才有效（附录 G）</td></tr>
+<tr><td>BR-09</td><td>停运不计</td><td>站房处于"停运"状态期间的数据不参与有效性统计与超标判定</td></tr>
+<tr><td>BR-10</td><td>超量程处理</td><td>实测值超量程上限时，以量程上限值参与统计，同时打 T 标记</td></tr>
+<tr><td>BR-11</td><td>负值修正</td><td>SO₂ 标干浓度 > -15 mg/m³ 时修正为 0.5 mg/m³（按标准校正规则执行，可配置）</td></tr>
+<tr><td>BR-12</td><td>报警升级</td><td>P1 报警 15 分钟未认领 → 升级至主管；30 分钟未认领 → 升级至运维单位管理员并电话通知</td></tr>
+<tr><td>BR-13</td><td>物资闭环</td><td>运维记录中申报的试剂/备件，必须有对应出库记录，否则记录不可提交</td></tr>
+<tr><td>BR-14</td><td>审计不可变</td><td>审计日志只允许 INSERT，禁止 UPDATE/DELETE；应用账号无该表写权限以外的任何权限</td></tr>
+<tr><td>BR-15</td><td>数据保留</td><td>分钟数据在线保留 12 个月，之后归档；运维记录与审计日志保留 ≥3 年</td></tr>
+</tbody>
+</table>
+
+<h2 id="s7">07 非功能需求</h2>
+<table>
+<thead><tr><th style="width:130px">类别</th><th>指标</th></tr></thead>
+<tbody>
+<tr><td>性能</td><td>常规列表查询 P95 ≤ 1.5 s；1000 站房实时一览首屏 ≤ 3 s；报表（月/1000 站房）异步生成 ≤ 60 s</td></tr>
+<tr><td>并发</td><td>Web 在线用户 500；接入层并发连接 5000，峰值报文 2000 条/秒</td></tr>
+<tr><td>可用性</td><td>≥ 99.5%（年停机 ≤ 44 小时）；接入层与业务层可独立重启</td></tr>
+<tr><td>数据完整性</td><td>报文不丢（落盘队列 + 消费确认）；补传数据幂等去重</td></tr>
+<tr><td>安全</td><td>等保二级；传输 HTTPS/TLS1.2+；密码 bcrypt；敏感字段加密存储；SQL 注入/XSS 防护；接口限流</td></tr>
+<tr><td>审计</td><td>所有写操作留痕（谁、何时、改了什么、改前改后）</td></tr>
+<tr><td>兼容</td><td>Chrome/Edge 90+；微信小程序基础库 2.20+；iOS 13+/Android 8+</td></tr>
+<tr><td>可维护</td><td>配置化（报警规则、作业模板、字典均可在界面维护，不改代码）</td></tr>
+<tr><td>可观测</td><td>接入成功率、解析失败率、队列积压、接口耗时四类监控指标</td></tr>
+</tbody>
+</table>
+
+<h2 id="s8">08 数据量与容量估算</h2>
+<table>
+<thead><tr><th>项</th><th class="center">单站房</th><th class="center">1000 站房</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>因子数</td><td class="center">10 ~ 20</td><td class="center">—</td><td>废水 COD/氨氮/总磷/总氮/pH/流量；废气 SO₂/NOx/颗粒物/O₂/温压流湿</td></tr>
+<tr><td>分钟数据</td><td class="center">14.4 万条/天</td><td class="center">1.44 亿条/天</td><td>按 10 因子 × 1440 分钟</td></tr>
+<tr><td>写入 TPS</td><td class="center">1.7</td><td class="center">1667</td><td>峰值按 3 倍估 ≈ 5000 TPS</td></tr>
+<tr><td>年增量</td><td class="center">—</td><td class="center">≈ 15 TB（原始）<br>≈ 1.5 TB（压缩后）</td><td>时序库压缩比 8~10 : 1</td></tr>
+<tr><td>运维记录</td><td class="center">2 ~ 4 条/天</td><td class="center">300 万条/年</td><td>含照片，每条约 1.5 MB → 4.5 TB/年（对象存储）</td></tr>
+</tbody>
+</table>
+<div class="note warn">
+<span class="t">容量结论</span>
+<p>必须使用<strong>时序数据库</strong>存分钟数据，关系库只存档案与业务单据；照片/谱图/视频走对象存储，绝不入库。1000 站房规模下，MySQL 单表存分钟数据在 3 个月内即不可用。</p>
+</div>
+
+<h2 id="s9">09 分期实施与验收标准</h2>
+<table>
+<thead><tr><th style="width:70px">阶段</th><th style="width:180px">内容</th><th style="width:90px">周期</th><th>验收标准</th></tr></thead>
+<tbody>
+<tr><td>P0</td><td>档案 + 接入网关 + 原始数据 + 联网监测 + 基础报警 + 飞书推送</td><td>6 周</td><td>接入 3 个真实站房，连续 7 天数据完整率 ≥ 99%；飞书 P1 报警 60 秒内触达</td></tr>
+<tr><td>P1</td><td>计划/任务/记录/审核 + 小程序 + 物资 + 公众号 + 报表</td><td>6 周</td><td>完成 1 个月真实运维闭环；计划覆盖率、及时率可出数</td></tr>
+<tr><td>P2</td><td>执法检查/整改 + 考核 + 数据分析 + 反控</td><td>4 周</td><td>监管方可独立完成一次检查-整改-复核全流程</td></tr>
+<tr><td>试运行</td><td>全量点位迁移 + 培训 + 调优</td><td>4 周</td><td>无 P1 级缺陷；用户培训覆盖率 100%</td></tr>
+</tbody>
+</table>
+
+<h3>9.1 验收硬指标</h3>
+<ul>
+<li>报文解析成功率 ≥ 99.9%，未解析报文可定位原因。</li>
+<li>附录 G 判定结果与省/国发平台同一时段同一站房的差异率 ≤ 1%，且差异可逐条解释。</li>
+<li>运维记录可导出符合 HJ 355/HJ 75 台账要求的 PDF，含签名与照片。</li>
+<li>四端消息一致：同一报警在 Web、飞书、小程序中的处置状态实时同步。</li>
+<li>审计日志完整性：任意一条数据修改均可追溯到人、时间、改前值。</li>
+</ul>
+
+<h2 id="s10">10 待确认问题（Open Issues）</h2>
+<table>
+<thead><tr><th style="width:70px">编号</th><th style="width:230px">问题</th><th>影响</th><th style="width:100px">需谁确认</th></tr></thead>
+<tbody>
+<tr><td>Q1</td><td>系统最终使用主体是谁：监管方为主，还是运维单位为主？</td><td>决定租户模型与菜单结构，影响 30% 工作量</td><td>甲方</td></tr>
+<tr><td>Q2</td><td>数据源：自建 TCP 接入直连数采仪，还是对接国发/省平台取数？</td><td>决定能否拿到原始报文、标记、参数、反控能力</td><td>甲方 + 现场</td></tr>
+<tr><td>Q3</td><td>站房/企业/因子数量级；2017 协议存量设备比例</td><td>决定容量规划与协议兼容工作量</td><td>甲方</td></tr>
+<tr><td>Q4</td><td>小程序与公众号的主体、认证状态、域名备案、部署网络（公网/内网）</td><td>内网部署则小程序方案不成立，需改 H5</td><td>甲方</td></tr>
+<tr><td>Q5</td><td>是否本期接入视频监控与用电监控</td><td>需现场改造，影响预算与工期</td><td>甲方</td></tr>
+<tr><td>Q6</td><td>是否已有运维考核办法/SLA 文本（响应时限、巡检频次、扣分规则）</td><td>直接决定 BR 规则与考核模型</td><td>甲方</td></tr>
+<tr><td>Q7</td><td>运维记录是否要求 CA 电子签名；台账留存年限</td><td>影响合规设计与存储成本</td><td>甲方</td></tr>
+<tr><td>Q8</td><td>是否需要与企业 OA、排污许可系统、第三方检测机构对接</td><td>影响接口工作量</td><td>甲方</td></tr>
+<tr><td>Q9</td><td>是否要求等保二级测评、信创国产化（数据库/中间件/操作系统）</td><td>影响选型，可能推翻技术栈</td><td>甲方</td></tr>
+<tr><td>Q10</td><td>历史数据与台账是否迁移；迁移量级与格式</td><td>影响工期 1~3 周</td><td>甲方</td></tr>
+</tbody>
+</table>
+
+</div>
+
+<div class="doc-foot">
+  <span>污染源自动监控设施第三方运维信息管理系统 · 需求规格说明书 v1.0</span>
+  <span>2026-11-04</span>
+</div>
+
+</div>
+</body>
+</html>

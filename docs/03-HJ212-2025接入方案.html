@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>03 · HJ 212—2025 接入方案</title>
+<link rel="stylesheet" href="assets/doc.css">
+</head>
+<body>
+<div class="page">
+
+<div class="fnav">
+  <a href="01-需求规格说明书.html">01 需求规格</a>
+  <a href="02-数据库设计.html">02 库表设计</a>
+  <a class="cur" href="03-HJ212-2025接入方案.html">03 接入方案</a>
+  <a href="04-报警与推送设计.html">04 报警推送</a>
+  <a href="05-页面清单与交互说明.html">05 页面清单</a>
+  <a href="diagrams/architecture.html">技术架构图</a>
+  <a href="diagrams/backend-flow.html">后端流程图</a>
+</div>
+
+<div class="doc-head">
+  <div class="doc-kicker">技术方案 · 接入层设计 v1.0</div>
+  <h1>HJ 212—2025 数据接入方案</h1>
+  <p class="doc-sub">报文解析、SM4 加解密、密钥生命周期、设备身份核验、双维度标记、附录 G 有效性判定、反控通道。</p>
+  <div class="doc-meta">
+    <span><b>标准</b>HJ 212—2025（替代 2017）</span>
+    <span><b>生效</b>2026-01-01</span>
+    <span><b>传输</b>TCP 长连接 / HTTP</span>
+    <span><b>加密</b>SM4-128-ECB</span>
+    <span><b>接入层</b>Netty 4.x</span>
+  </div>
+</div>
+
+<div class="doc-body">
+
+<div class="note warn">
+<span class="t">阅读前提</span>
+<p>本方案依据 HJ 212—2025 公开正文与官方解读编写。<strong>报文命令编码、字段名、加密范围等细节，实施前必须逐条比对甲方提供的标准正式文本</strong>（你提供的 PDF 中附录 A/B/D/E/F/G/H 为准）。凡标注"待核对"的条目，均不得直接进入开发。</p>
+</div>
+
+<h2 id="s0">目录</h2>
+<div class="toc">
+  <a href="#s1"><span class="n">01</span>标准要求 → 系统能力映射</a>
+  <a href="#s2"><span class="n">02</span>系统结构与角色</a>
+  <a href="#s3"><span class="n">03</span>协议栈与报文结构</a>
+  <a href="#s4"><span class="n">04</span>命令编码与字段</a>
+  <a href="#s5"><span class="n">05</span>通信安全：SM4 与密钥管理</a>
+  <a href="#s6"><span class="n">06</span>设备身份与联网确认</a>
+  <a href="#s7"><span class="n">07</span>双维度数据标记</a>
+  <a href="#s8"><span class="n">08</span>附录 G 有效性判定</a>
+  <a href="#s9"><span class="n">09</span>上传频次要求</a>
+  <a href="#s10"><span class="n">10</span>接入网关实现</a>
+  <a href="#s11"><span class="n">11</span>异常场景处理</a>
+  <a href="#s12"><span class="n">12</span>测试用例清单</a>
+</div>
+
+<h2 id="s1">01 标准要求 → 系统能力映射</h2>
+<table>
+<thead><tr><th style="width:170px">标准要求</th><th style="width:230px">系统必须实现的能力</th><th>做错的后果</th></tr></thead>
+<tbody>
+<tr><td>设备唯一标识 SN</td><td>设备台账存 SN/CPUID/MAC；每日核验上报 SN 与注册 SN 一致</td><td>SN 不一致数据判无效，无法入网</td></tr>
+<tr><td>注册 → 激活 → 确认 三步</td><td>设备状态机 REGISTERED/ACTIVATED/CONFIRMED；确认前数据标记为"未确认"</td><td>确认前数据不算有效数据</td></tr>
+<tr><td>SM4 加密 + 密钥 90 天</td><td>接入层解密；密钥到期倒计时；更新失败告警</td><td>密钥失效 → 整站数据中断</td></tr>
+<tr><td>三同时上传（状态+参数+数据）</td><td>按 CN 分流解析；参数与数据分表存储并建立时间关联</td><td>无法做穿透式核验，监管不认</td></tr>
+<tr><td>双维度标记</td><td><code>dev_flag</code> 与 <code>prod_flag</code> 独立存储</td><td>有效性判定全错，报表对不上</td></tr>
+<tr><td>附录 G 有效性判定</td><td>小时 ≥45 有效分钟；日 ≥75% 有效小时</td><td>有效率口径与省平台不一致</td></tr>
+<tr><td>原始数据 / 谱图 / 视频</td><td>原始信号表 + 对象存储，文件与数据点关联</td><td>无法证明数据未被修饰</td></tr>
+<tr><td>反控（校时/读参/召唤）</td><td>下行指令通道 + 应答匹配 + 操作留痕</td><td>运维只能跑现场，成本高</td></tr>
+<tr><td>有效传输率 ≥90%</td><td>联网监测看板 + 考核指标</td><td>验收不通过</td></tr>
+</tbody>
+</table>
+
+<h2 id="s2">02 系统结构与角色</h2>
+<pre><code>┌──────────────────────── 现场端 ────────────────────────┐
+│  分析仪（COD/氨氮/CEMS…）──RS485/Modbus──┐             │
+│  流量计 / pH / 温压流湿 ─────────────────┤             │
+│  工况参数（DCS/PLC）/ 用电监测 ───────────┤             │
+│                                          ▼             │
+│                                  ┌──────────────┐      │
+│                                  │  数采仪 DTU  │      │
+│                                  │ 采集·计算·标记│      │
+│                                  │ SM4 加密·上报 │      │
+│                                  └──────┬───────┘      │
+└─────────────────────────────────────────┼──────────────┘
+                                          │ TCP / HTTP
+                                          ▼
+┌──────────────────────── 平台侧（上位机）────────────────┐
+│  接入网关（Netty）→ 解码 → 校验 → 解析 → MQ → 入库      │
+│  ↑ 下行指令（校时 1012/1013、读参、召唤补传）            │
+└──────────────────────────────────────────────────────────┘</code></pre>
+
+<table>
+<thead><tr><th style="width:130px">角色</th><th>职责</th><th>在本系统中的落点</th></tr></thead>
+<tbody>
+<tr><td>现场机</td><td>采集、计算、标记、加密、上报、响应反控</td><td>不由我方实现，但我方须校验其行为合规（SN、标记、频次）</td></tr>
+<tr><td>数采仪</td><td>直连一次仪表，采集处理上传；不得经工控机中转改写</td><td>设备台账记录是否直连，作为合规检查项</td></tr>
+<tr><td>上位机（本系统）</td><td>接收、存储、判定、展示、下发指令</td><td>本文档主体</td></tr>
+<tr><td>国发/省平台</td><td>上级汇聚</td><td>可选：本系统作为数据源向上转发</td></tr>
+</tbody>
+</table>
+
+<h2 id="s3">03 协议栈与报文结构</h2>
+
+<h3>3.1 报文格式</h3>
+<pre><code>##&lt;数据段长度4位&gt;&lt;数据段&gt;&lt;CRC16 4位&gt;
+
+数据段 = QN=…;ST=…;CN=…;PW=…;MN=…;Flag=…;PN=…;CP=&&数据区&&
+
+示例（分钟数据上报，示意）：
+##0384QN=20261104141700001;ST=32;CN=2051;PW=123456;
+MN=FHZY-S-01DTU01;Flag=4;PN=2011;
+CP=&&DataTime=20261104141700;a21026-Rtd=33.215,a21026-Flag=N;
+a00000-Rtd=42.650,a00000-Flag=N;...&&A1B2</code></pre>
+
+<table>
+<thead><tr><th style="width:90px">要素</th><th>规则</th><th>实现要点</th></tr></thead>
+<tbody>
+<tr><td>起始符</td><td><code>##</code></td><td>粘包扫描锚点</td></tr>
+<tr><td>长度</td><td>4 位十进制，指数据段字节数</td><td>用于半包判定，必须按字节而非字符</td></tr>
+<tr><td>CRC</td><td>CRC16（Modbus 多项式），大端，4 位大写十六进制</td><td>校验失败按错误应答返回，不入库</td></tr>
+<tr><td>分隔</td><td>字段间 <code>;</code>，数据区 <code>&amp;&amp;</code> 包裹，参数间 <code>,</code></td><td>解析器不得依赖字段顺序</td></tr>
+<tr><td>编码</td><td>ASCII（中文按 GBK 或 UTF-8 由 PN 声明）</td><td>统一按 UTF-8 解码失败回退 GBK</td></tr>
+</tbody>
+</table>
+
+<h3>3.2 关键字段</h3>
+<table>
+<thead><tr><th style="width:80px">字段</th><th style="width:150px">含义</th><th>用途</th></tr></thead>
+<tbody>
+<tr><td><code>QN</code></td><td>请求编号（时间戳+序列）</td><td><strong>幂等键</strong>：同一 QN 重复上报去重</td></tr>
+<tr><td><code>ST</code></td><td>系统编码</td><td>区分行业/系统类型</td></tr>
+<tr><td><code>CN</code></td><td>命令编码</td><td>决定解析分支</td></tr>
+<tr><td><code>PW</code></td><td>访问密码</td><td>设备接入鉴权（第一道）</td></tr>
+<tr><td><code>MN</code></td><td>设备/站点唯一编号</td><td>映射 station_code + dtu_sn</td></tr>
+<tr><td><code>Flag</code></td><td>包标志（是否含数据段、是否加密等）</td><td><strong>解密判定依据</strong></td></tr>
+<tr><td><code>PN</code></td><td>协议版本号</td><td>2017 / 2025 分流</td></tr>
+<tr><td><code>CP</code></td><td>指令参数区</td><td>业务数据主体</td></tr>
+</tbody>
+</table>
+
+<h2 id="s4">04 命令编码与字段</h2>
+<div class="note warn">
+<span class="t">重要</span>
+<p>下表为<strong>实施常用子集</strong>，用于方案评审与开发排期。编码以 HJ 212—2025 正文附录为准，落地前须逐条核对；标注"新增"的为 2025 版扩展能力，具体编码以正式文本为准。</p>
+</div>
+
+<h3>4.1 现场机 → 上位机</h3>
+<table>
+<thead><tr><th style="width:80px">CN</th><th style="width:180px">含义</th><th>关键参数</th><th style="width:80px">加密</th></tr></thead>
+<tbody>
+<tr><td>2011</td><td>上传污染物实时数据</td><td>DataTime, {因子}-Rtd, {因子}-Flag, {因子}-ZsRtd(折算)</td><td>是</td></tr>
+<tr><td>2051</td><td>上传分钟数据</td><td>同上，按分钟粒度</td><td>是</td></tr>
+<tr><td>2061</td><td>上传小时数据</td><td>Avg/Max/Min/Cou（排放量）</td><td>是</td></tr>
+<tr><td>2031</td><td>上传日数据</td><td>日均值、日排放量、有效率</td><td>是</td></tr>
+<tr><td>2041</td><td>上传分钟历史（补传）</td><td>起止时间 + 批量数据</td><td>是</td></tr>
+<tr><td>3011</td><td>上传设备运行状态</td><td>设备状态码、故障码</td><td>是</td></tr>
+<tr><td>3020</td><td>上传现场机信息</td><td>SN、CPUID、MAC、固件版本</td><td>是</td></tr>
+<tr><td>—</td><td><span class="tag brand">新增</span> 上传工作参数</td><td>量程、斜率、截距、校准浓度、消解温度</td><td>是</td></tr>
+<tr><td>—</td><td><span class="tag brand">新增</span> 上传操作日志</td><td>登录、参数修改、校准、维护、故障</td><td>是</td></tr>
+<tr><td>—</td><td><span class="tag brand">新增</span> 上传原始数据</td><td>信号值、零点/量程信号、峰面积、谱图引用</td><td>是</td></tr>
+</tbody>
+</table>
+
+<h3>4.2 上位机 → 现场机（反控）</h3>
+<table>
+<thead><tr><th style="width:80px">CN</th><th style="width:180px">含义</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>9011</td><td>请求实时数据</td><td>主动召唤，用于补数验证</td></tr>
+<tr><td>9012</td><td>请求分钟数据</td><td>指定时间段</td></tr>
+<tr><td>9013</td><td>请求小时数据</td><td>—</td></tr>
+<tr><td>9014</td><td>请求日数据</td><td>—</td></tr>
+<tr><td>1011</td><td>设置超时与重发次数</td><td>接入时下发</td></tr>
+<tr><td>1012</td><td>提取现场机时间</td><td>用于时钟偏差检测</td></tr>
+<tr><td>1013</td><td>设置现场机时间</td><td>校时，需审批留痕</td></tr>
+<tr><td>1014</td><td><span class="tag brand">2025</span> 密钥管理</td><td>下发/更新传输密钥</td></tr>
+</tbody>
+</table>
+
+<h2 id="s5">05 通信安全：SM4 与密钥管理</h2>
+
+<h3>5.1 加密要求</h3>
+<table>
+<thead><tr><th style="width:150px">项</th><th>要求</th></tr></thead>
+<tbody>
+<tr><td>算法</td><td>国密 SM4，128 位密钥，ECB 模式，No Padding（按块对齐补位）</td></tr>
+<tr><td>加密范围</td><td>数据上传类命令（约 2000~2999）、密钥管理（1014）、现场机信息（3020）；其余命令可明文<span class="small">（以正文为准）</span></td></tr>
+<tr><td>传输通道</td><td>互联网必须加密；专网宜加密</td></tr>
+<tr><td>密钥有效期</td><td>最长 90 天，到期前由数采仪自动向上位机获取新密钥</td></tr>
+<tr><td>密钥保管</td><td>不得以任何明文形式传输、显示、存储；平台侧加密存储于 KMS/密钥表</td></tr>
+<tr><td>失效处理</td><td>密钥丢失或过期需由排污单位在上位机重置，平台须提供重置流程</td></tr>
+</tbody>
+</table>
+
+<h3>5.2 密钥状态机与告警</h3>
+<pre><code>初始密钥（出厂/注册下发）
+      │ 首次联网
+      ▼
+   ACTIVE ──每 90 天（到期前自动更新）──▶ ACTIVE（版本 +1）
+      │
+      ├─ 更新失败 ──▶ EXPIRING（进入告警倒计时 7/3/1 天）
+      │                    │
+      │                    └─ 到期 ──▶ EXPIRED（数据无法解密，整站中断）
+      ▼
+   RESET（排污单位在上位机重置 → 重新下发）</code></pre>
+<table>
+<thead><tr><th style="width:170px">告警</th><th style="width:80px">级别</th><th>触发条件</th><th>动作</th></tr></thead>
+<tbody>
+<tr><td>密钥 7 天内到期</td><td>P2</td><td>expire_at - now ≤ 7d</td><td>飞书通知运维主管，提示现场检查</td></tr>
+<tr><td>密钥更新失败</td><td>P1</td><td>fail_count ≥ 2</td><td>飞书 + 短信，派工单</td></tr>
+<tr><td>密钥已过期</td><td>P1</td><td>解密失败且 expire_at &lt; now</td><td>立即告警 + 引导重置流程</td></tr>
+</tbody>
+</table>
+
+<h2 id="s6">06 设备身份与联网确认</h2>
+
+<h3>6.1 三步流程</h3>
+<table>
+<thead><tr><th style="width:110px">步骤</th><th style="width:130px">执行方</th><th>动作</th><th>系统状态</th></tr></thead>
+<tbody>
+<tr><td>① 注册</td><td>设备厂商</td><td>在上级平台注册产品型号、硬件信息、初始密钥</td><td><code>REGISTERED</code></td></tr>
+<tr><td>② 激活</td><td>数采仪</td><td>上传 SN、CPUID、MAC，与注册信息比对一致后获取传输密钥</td><td><code>ACTIVATED</code></td></tr>
+<tr><td>③ 确认</td><td>排污单位</td><td>按排污许可证信息核对联网内容并确认</td><td><code>CONFIRMED</code></td></tr>
+</tbody>
+</table>
+<div class="note danger">
+<span class="t">红线</span>
+<p><strong>确认前的数据为无效数据</strong>。系统必须在原始数据页对该类数据单独标记「未确认」，不得计入有效数据率，也不得用于超标判定——否则一旦被监管抽查，整套统计都要推翻。</p>
+</div>
+
+<h3>6.2 SN 校验规则</h3>
+<table>
+<thead><tr><th style="width:150px">校验项</th><th>规则</th><th>不一致处理</th></tr></thead>
+<tbody>
+<tr><td>SN 与台账</td><td>上报 SN = 台账登记 SN</td><td>P1 报警「疑似更换/翻新机」，数据标记为待核</td></tr>
+<tr><td>上报频次</td><td>每日 0:05 前上报一次</td><td>超时未上报 → P2「SN 未上报」</td></tr>
+<tr><td>更换时效</td><td>更换设备后 5 分钟内上报新 SN</td><td>超时 → P1，并要求补录更换工单</td></tr>
+<tr><td>SN 结构</td><td>厂商识别码 + 产品类别 + 校验位 + 序列号</td><td>格式非法 → 拒绝入库并记录原始报文</td></tr>
+</tbody>
+</table>
+
+<h2 id="s7">07 双维度数据标记</h2>
+
+<h3>7.1 设备标记（dev_flag）</h3>
+<table>
+<thead><tr><th style="width:90px">代码</th><th style="width:130px">含义</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>N</code></td><td>数据有效</td><td>默认标记</td></tr>
+<tr><td><code>D</code></td><td>故障</td><td>设备故障、检修、断电导致的缺失或无效</td></tr>
+<tr><td><code>C</code></td><td>校准</td><td>校准、核查期间</td></tr>
+<tr><td><code>M</code></td><td>日常维护</td><td>计划性维护保养期间</td></tr>
+<tr><td><code>T</code></td><td>超量程</td><td>超过当前工作量程</td></tr>
+<tr><td><code>Td</code></td><td>关键工况参数故障</td><td>反映生产工况的关键参数（炉温、蒸发量等）故障</td></tr>
+</tbody>
+</table>
+<p><strong>优先级</strong>（时间相同时从高到低）：<code>D &gt; C &gt; M &gt; T &gt; Td</code>；存在多个维护类标记时，优先取<strong>持续时间最长</strong>的标记。</p>
+<p><strong>判定主体</strong>：由现场端根据仪器状态与运行参数<strong>自动判定并随数据同步上传，不应人工干预</strong>。系统若发现"人工改标记"的痕迹（如标记突变而无对应设备状态），视为异常。</p>
+
+<h3>7.2 生产工况标记（prod_flag）</h3>
+<table>
+<thead><tr><th style="width:90px">代码</th><th style="width:130px">含义</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>N</code></td><td>正常运行</td><td>正常排放时段</td></tr>
+<tr><td><code>St</code></td><td>启动</td><td>开始启动至稳定运行前</td></tr>
+<tr><td><code>Stc</code></td><td>冷启动（冷点火）</td><td>完全停止状态下启动</td></tr>
+<tr><td><code>Sth</code></td><td>热启动（热点火）</td><td>低负荷/未完全停止状态下启动</td></tr>
+<tr><td><code>Sd</code></td><td>停炉（机）</td><td>由正常运行转为停止运行的过程</td></tr>
+<tr><td><code>B</code></td><td>闷炉</td><td>炉膛密闭自然降温/保温</td></tr>
+<tr><td><code>F</code></td><td>停运</td><td>完全停止运行至再次启动前</td></tr>
+<tr><td>—</td><td>停排 <span class="small">（水污染源）</span></td><td>废水排放单位特有，编码以正文为准</td></tr>
+</tbody>
+</table>
+<div class="note">
+<span class="t">业务含义</span>
+<p>工况标记是<strong>非正常工况超标判定</strong>的依据：标记为启动/停炉/停运时段的超标，可按规则不计入超标次数（具体是否豁免由地方监管口径决定，系统做成<strong>可配置</strong>，不要写死）。</p>
+</div>
+
+<h2 id="s8">08 附录 G 有效性判定</h2>
+<table>
+<thead><tr><th style="width:150px">层级</th><th>判定规则</th><th>系统实现</th></tr></thead>
+<tbody>
+<tr><td>分钟值</td><td>采集成功且标记为 N 即为有效</td><td>quality 字段：1 有效 / 2 无效 / 3 未标记</td></tr>
+<tr><td>小时值</td><td>该小时有效分钟数 <strong>≥ 45</strong>，小时值才有效</td><td>定时任务整点后 5 分钟计算，写入 ts_data_hour</td></tr>
+<tr><td>日均值</td><td>该日有效小时数 <strong>≥ 75%（18 小时）</strong>，日均值才有效</td><td>次日 00:30 计算</td></tr>
+<tr><td>停运时段</td><td>站房停运期间数据<strong>不参与</strong>统计</td><td>按 ops/station 停运区间剔除</td></tr>
+<tr><td>超量程</td><td>超上限时以<strong>量程上限值</strong>参与统计，同时打 T 标记</td><td>计算前置处理</td></tr>
+<tr><td>无有效数据</td><td>统计时段内无有效数据时，全部无效数据参与计算</td><td>降级策略，需在报表备注中说明</td></tr>
+<tr><td>负值修约</td><td>SO₂ 标干浓度 &gt; -15 mg/m³ 时修正为 0.5 mg/m³</td><td>规则可配置，按因子维护</td></tr>
+<tr><td>禁止数据保持</td><td>不得设置数据保持、零值、固定值等干预输出</td><td>恒值检测：连续 N 条完全相等 → 疑似保持，告警</td></tr>
+</tbody>
+</table>
+
+<h2 id="s9">09 上传频次要求</h2>
+<table>
+<thead><tr><th style="width:170px">数据类型</th><th style="width:180px">频次要求</th><th>备注</th></tr></thead>
+<tbody>
+<tr><td>废气分钟数据</td><td>1 分钟/次</td><td>实时上传</td></tr>
+<tr><td>废水数据</td><td>按周期采样上报（取消瞬时采样）</td><td>须明确上传采样时间</td></tr>
+<tr><td>实时运行参数</td><td>1 分钟/次</td><td>—</td></tr>
+<tr><td>非实时运行参数</td><td>变化后 5 分钟内</td><td><strong>参数变更是重点监控项</strong></td></tr>
+<tr><td>设备 SN</td><td>每日 0:05 前；更换后 5 分钟内</td><td>—</td></tr>
+<tr><td>操作日志</td><td>实时同步</td><td>登录/参数修改/校准/维护</td></tr>
+<tr><td>小时/日数据</td><td>按周期汇总上传</td><td>与本地计算应一致，不一致须能解释</td></tr>
+</tbody>
+</table>
+
+<h2 id="s10">10 接入网关实现</h2>
+
+<h3>10.1 处理流水线</h3>
+<pre><code>TCP 连接
+  └─ IdleStateHandler（读空闲 300s 断链）
+      └─ LengthFieldBasedFrameDecoder（按 ## + 4 位长度拆包）
+          └─ Crc16Validator（校验失败 → 错误应答 + 丢弃）
+              └─ Sm4DecryptHandler（按 Flag/CN 判定是否解密）
+                  └─ MessageParser（按 CN 分流为强类型对象）
+                      └─ IdempotentFilter（QN + MN 去重，Redis SETNX TTL 24h）
+                          └─ AckWriter（立即回 9011/9012 应答，先应答后落库）
+                              └─ MQ Producer（topic: hj212.{CN}）
+                                  └─ 消费端：入库 / 计算 / 规则引擎 / 推送</code></pre>
+
+<h3>10.2 关键实现约束</h3>
+<table>
+<thead><tr><th style="width:170px">约束</th><th>做法</th><th>原因</th></tr></thead>
+<tbody>
+<tr><td>先应答后落库</td><td>解析成功后立即回应答，再异步落库</td><td>现场机超时重发会造成大量重复</td></tr>
+<tr><td>幂等</td><td>QN+MN 做唯一键，Redis SETNX + DB 唯一索引双保险</td><td>补传与重发必然重复</td></tr>
+<tr><td>半包/粘包</td><td>按声明长度截取，不足则等待，超长则丢弃并告警</td><td>NB-IoT/4G 网络下极常见</td></tr>
+<tr><td>解码容错</td><td>UTF-8 失败回退 GBK；数值非法置 NULL 并计数</td><td>老旧设备编码不规范</td></tr>
+<tr><td>背压</td><td>MQ 积压超阈值时降级为直接落盘队列</td><td>峰值 3 倍突发</td></tr>
+<tr><td>时钟偏差</td><td>记录 DataTime 与服务器时间差，>60s 告警</td><td>时间错会导致数据落到错误时段</td></tr>
+<tr><td>原始报文留存</td><td>加密报文原样存 7 天（对象存储/日志）</td><td>争议时唯一证据</td></tr>
+</tbody>
+</table>
+
+<h3>10.3 连接管理</h3>
+<table>
+<thead><tr><th style="width:150px">项</th><th>参数</th></tr></thead>
+<tbody>
+<tr><td>监听</td><td>TCP 20000（可配置）；HTTP 20001</td></tr>
+<tr><td>最大连接</td><td>5000（单节点），可水平扩容</td></tr>
+<tr><td>鉴权</td><td>PW + MN 白名单；未注册 MN 直接拒绝并记录</td></tr>
+<tr><td>心跳</td><td>读空闲 300s 视为离线；离线即刻更新联网状态并发告警</td></tr>
+<tr><td>下行通道</td><td>按 MN 查找 Channel，找不到则入待发队列，设备上线后补发</td></tr>
+</tbody>
+</table>
+
+<h2 id="s11">11 异常场景处理</h2>
+<table>
+<thead><tr><th style="width:190px">场景</th><th>表现</th><th>处理策略</th></tr></thead>
+<tbody>
+<tr><td>CRC 校验失败</td><td>报文内容不可信</td><td>回错误应答（CRC 错误码），不入库，计数告警</td></tr>
+<tr><td>解密失败</td><td>密钥不匹配/过期</td><td>隔离到 pending 表，触发密钥告警，不污染主数据</td></tr>
+<tr><td>MN 未注册</td><td>野设备接入</td><td>拒绝，记审计，P1「非法设备接入」</td></tr>
+<tr><td>时间戳超前/滞后</td><td>现场机时钟漂移</td><td>按 DataTime 入库，同时记录偏差；>1h 拒绝并告警</td></tr>
+<tr><td>补传乱序</td><td>历史数据晚到</td><td>允许乱序写入；小时/日汇总按区间重算（幂等覆盖）</td></tr>
+<tr><td>数据重复</td><td>重发/补传重叠</td><td>QN 去重 + 唯一索引；重复报文只更新最后一次</td></tr>
+<tr><td>长连接抖动</td><td>4G 弱网频繁断连</td><td>指数退避重连；离线时长计入有效传输率</td></tr>
+<tr><td>突发洪峰</td><td>断网恢复集中补传</td><td>限流（按 MN 令牌桶），保序处理，防止打爆数据库</td></tr>
+</tbody>
+</table>
+
+<h2 id="s12">12 测试用例清单</h2>
+<table>
+<thead><tr><th style="width:80px">编号</th><th style="width:220px">用例</th><th>预期</th></tr></thead>
+<tbody>
+<tr><td>TC-01</td><td>标准分钟报文上报</td><td>应答成功，数据入库，标记 N</td></tr>
+<tr><td>TC-02</td><td>半包（分两次发送）</td><td>正确重组，不重复入库</td></tr>
+<tr><td>TC-03</td><td>粘包（两次报文连发）</td><td>拆成两条独立报文</td></tr>
+<tr><td>TC-04</td><td>CRC 错误</td><td>回错误应答，不入库</td></tr>
+<tr><td>TC-05</td><td>同一 QN 重发 3 次</td><td>只入库 1 条</td></tr>
+<tr><td>TC-06</td><td>SM4 加密报文</td><td>正确解密，明文可读</td></tr>
+<tr><td>TC-07</td><td>密钥过期后上报</td><td>解密失败，触发 P1，数据进隔离区</td></tr>
+<tr><td>TC-08</td><td>SN 与台账不一致</td><td>P1 告警，数据标记待核</td></tr>
+<tr><td>TC-09</td><td>标记 D 连续 2 小时</td><td>生成「长时间故障」报警</td></tr>
+<tr><td>TC-10</td><td>标记 C 但无校准工单</td><td>生成「疑似虚假标记」</td></tr>
+<tr><td>TC-11</td><td>校准工单但标记为 N</td><td>生成「漏标」</td></tr>
+<tr><td>TC-12</td><td>小时仅 40 个有效分钟</td><td>该小时判定无效</td></tr>
+<tr><td>TC-13</td><td>日仅 17 个有效小时</td><td>日数据判定无效</td></tr>
+<tr><td>TC-14</td><td>超量程数据</td><td>以量程上限参与统计，打 T 标记</td></tr>
+<tr><td>TC-15</td><td>校时指令 1012/1013</td><td>下行成功，应答回执入库，操作留痕</td></tr>
+<tr><td>TC-16</td><td>断网 2 小时后恢复集中补传</td><td>数据完整、无重复、顺序正确</td></tr>
+<tr><td>TC-17</td><td>2017 版老设备接入</td><td>按 PN 分流解析，功能降级但可用</td></tr>
+<tr><td>TC-18</td><td>连续 10 分钟数值完全相等</td><td>生成「恒值/数据保持」预警</td></tr>
+</tbody>
+</table>
+
+</div>
+
+<div class="doc-foot">
+  <span>污染源自动监控设施第三方运维信息管理系统 · 接入方案 v1.0</span>
+  <span>2026-11-04</span>
+</div>
+
+</div>
+</body>
+</html>

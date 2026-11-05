@@ -1,0 +1,64 @@
+version: '3.9'
+
+# 本地开发依赖：MySQL + Redis（时序库按需开启 profile ts）
+# 启动：docker compose up -d
+# 带时序库：docker compose --profile ts up -d
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: env-mon-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_DATABASE: env_mon
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-time-zone=+08:00
+    ports:
+      - '3306:3306'
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 表结构由后端 Flyway 版本化脚本自动建（V1~V10），
+      # 完整 DDL 参考 docs/schema.sql；生产禁止 ddl-auto 类自动建表
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-uroot', '-proot123456']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: env-mon-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  # HJ212 分钟数据量级大，必须走时序库；本地按需启动
+  tdengine:
+    image: tdengine/tdengine:3.3.0.0
+    container_name: env-mon-tdengine
+    restart: unless-stopped
+    profiles: ['ts']
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - '6030:6030'
+      - '6041:6041'
+    volumes:
+      - td-data:/var/lib/taos
+
+volumes:
+  mysql-data:
+  redis-data:
+  td-data:

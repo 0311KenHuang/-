@@ -1,0 +1,292 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "污染源自动监控设施第三方运维信息管理系统 · 技术架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1110,
+      440
+    ],
+    "views": [
+      {
+        "id": "data-path",
+        "label": "数据接入主链路",
+        "focus": [
+          "field",
+          "gateway",
+          "calc",
+          "tsdb",
+          "mysql"
+        ],
+        "note": "现场机报文经网关解密解析后进入计算服务，落库并完成有效性判定。"
+      },
+      {
+        "id": "alarm-path",
+        "label": "报警与触达",
+        "focus": [
+          "calc",
+          "msg",
+          "feishu",
+          "wechat"
+        ],
+        "note": "判定结果进入消息中心，按级别分发到飞书、小程序与公众号。"
+      },
+      {
+        "id": "storage",
+        "label": "存储分工",
+        "focus": [
+          "tsdb",
+          "mysql"
+        ],
+        "note": "分钟数据入时序库，档案与单据入关系库，避免大表拖垮业务。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "field",
+      "type": "external",
+      "label": "现场数采仪",
+      "sublabel": "HJ 212—2025",
+      "pos": [
+        30,
+        200
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "backend",
+      "label": "接入网关",
+      "sublabel": "Netty · 拆包 · SM4",
+      "pos": [
+        230,
+        200
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "tag": "5000 连接"
+    },
+    {
+      "id": "calc",
+      "type": "backend",
+      "label": "计算与判定",
+      "sublabel": "附录 G · 均值 · 排放量",
+      "pos": [
+        450,
+        194
+      ],
+      "size": [
+        170,
+        72
+      ]
+    },
+    {
+      "id": "msg",
+      "type": "backend",
+      "label": "消息中心",
+      "sublabel": "模板 · 路由 · 重试",
+      "pos": [
+        700,
+        200
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "tag": "统一出口"
+    },
+    {
+      "id": "tsdb",
+      "type": "database",
+      "label": "TDengine",
+      "sublabel": "分钟 / 小时 / 日",
+      "pos": [
+        450,
+        70
+      ],
+      "size": [
+        170,
+        56
+      ]
+    },
+    {
+      "id": "mysql",
+      "type": "database",
+      "label": "MySQL",
+      "sublabel": "档案 · 工单 · 报警",
+      "pos": [
+        450,
+        320
+      ],
+      "size": [
+        170,
+        56
+      ]
+    },
+    {
+      "id": "feishu",
+      "type": "external",
+      "label": "飞书",
+      "sublabel": "交互卡片 · 可认领",
+      "pos": [
+        930,
+        102
+      ],
+      "size": [
+        140,
+        54
+      ]
+    },
+    {
+      "id": "wechat",
+      "type": "external",
+      "label": "微信生态",
+      "sublabel": "小程序 · 公众号",
+      "pos": [
+        930,
+        192
+      ],
+      "size": [
+        140,
+        54
+      ]
+    },
+    {
+      "id": "clients",
+      "type": "frontend",
+      "label": "Web 管理端",
+      "sublabel": "Vue3 · 多租户",
+      "pos": [
+        930,
+        282
+      ],
+      "size": [
+        140,
+        54
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "现场端",
+      "wraps": [
+        "field"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "接入区 DMZ",
+      "wraps": [
+        "gateway"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "计算与存储区",
+      "wraps": [
+        "tsdb",
+        "calc",
+        "mysql"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "field-to-gateway",
+      "from": "field",
+      "to": "gateway",
+      "label": "加密报文",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gateway-to-calc",
+      "from": "gateway",
+      "to": "calc",
+      "label": "解析事件"
+    },
+    {
+      "id": "calc-to-msg",
+      "from": "calc",
+      "to": "msg",
+      "label": "报警事件"
+    },
+    {
+      "id": "calc-to-tsdb",
+      "from": "calc",
+      "to": "tsdb",
+      "label": "时序写入",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "calc-to-mysql",
+      "from": "calc",
+      "to": "mysql",
+      "label": "参数状态",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        535,
+        293
+      ]
+    },
+    {
+      "id": "msg-to-feishu",
+      "from": "msg",
+      "to": "feishu",
+      "label": "卡片",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "msg-to-wechat",
+      "from": "msg",
+      "to": "wechat",
+      "label": "订阅消息"
+    },
+    {
+      "id": "msg-to-clients",
+      "from": "msg",
+      "to": "clients",
+      "label": "站内信",
+      "fromSide": "bottom",
+      "toSide": "left"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "接入层",
+      "items": [
+        "按 ## + 长度拆包并校验 CRC，失败直接丢弃计数",
+        "SM4 解密失败隔离到 pending 区，不污染主库",
+        "先应答后落库，QN 幂等去重，断网补传不重复"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "计算与存储",
+      "items": [
+        "分钟数据入 TDengine，关系库只存档案与单据",
+        "有效性按附录 G：小时 ≥45 有效分钟、日 ≥75% 有效小时"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "报警与触达",
+      "items": [
+        "规则可配置，支持防抖、抑制、聚合与依赖抑制",
+        "飞书为主通道，小程序为稳定入口，短信兜底 P1"
+      ]
+    }
+  ]
+}

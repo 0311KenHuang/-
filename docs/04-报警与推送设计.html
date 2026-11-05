@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>04 · 报警规则与推送路由设计</title>
+<link rel="stylesheet" href="assets/doc.css">
+</head>
+<body>
+<div class="page">
+
+<div class="fnav">
+  <a href="01-需求规格说明书.html">01 需求规格</a>
+  <a href="02-数据库设计.html">02 库表设计</a>
+  <a href="03-HJ212-2025接入方案.html">03 接入方案</a>
+  <a class="cur" href="04-报警与推送设计.html">04 报警推送</a>
+  <a href="05-页面清单与交互说明.html">05 页面清单</a>
+  <a href="diagrams/architecture.html">技术架构图</a>
+  <a href="diagrams/backend-flow.html">后端流程图</a>
+</div>
+
+<div class="doc-head">
+  <div class="doc-kicker">设计说明书 · 报警引擎与消息中心 v1.0</div>
+  <h1>报警规则与多端推送路由</h1>
+  <p class="doc-sub">从"能报警"到"报得准、叫得应、有人管"：规则可配置、噪声可控、触达可追踪、处置可闭环。</p>
+  <div class="doc-meta">
+    <span><b>级别</b>P1 / P2 / P3</span>
+    <span><b>渠道</b>飞书 · 公众号 · 小程序 · 短信</span>
+    <span><b>延迟</b>P1 ≤ 60s</span>
+    <span><b>规则</b>38 条内置</span>
+  </div>
+</div>
+
+<div class="doc-body">
+
+<h2 id="s0">目录</h2>
+<div class="toc">
+  <a href="#s1"><span class="n">01</span>设计原则与分级</a>
+  <a href="#s2"><span class="n">02</span>规则模型</a>
+  <a href="#s3"><span class="n">03</span>内置规则清单（38 条）</a>
+  <a href="#s4"><span class="n">04</span>降噪：不做"报警轰炸机"</a>
+  <a href="#s5"><span class="n">05</span>报警生命周期与升级</a>
+  <a href="#s6"><span class="n">06</span>消息中心与路由</a>
+  <a href="#s7"><span class="n">07</span>四渠道能力与真实限制</a>
+  <a href="#s8"><span class="n">08</span>飞书实现方案</a>
+  <a href="#s9"><span class="n">09</span>微信公众号实现方案</a>
+  <a href="#s10"><span class="n">10</span>小程序订阅消息方案</a>
+  <a href="#s11"><span class="n">11</span>值班表与免打扰</a>
+  <a href="#s12"><span class="n">12</span>可靠性设计与验收</a>
+</div>
+
+<h2 id="s1">01 设计原则与分级</h2>
+
+<h3>1.1 四条原则</h3>
+<table>
+<thead><tr><th style="width:120px">原则</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>宁可少报，不可乱报</td><td>每条报警都必须"可处置"。报了没人能处理的，不进报警，进报表。</td></tr>
+<tr><td>分级即路由</td><td>级别不是标签，直接决定发给谁、多久发、要不要打电话。</td></tr>
+<tr><td>证据随报警走</td><td>报警消息里必须带：哪个站房、哪个因子、什么时候、现在值、限值、曲线截图入口。</td></tr>
+<tr><td>状态单向可追</td><td>OPEN → ACK → PROCESSING → CLOSED，每次流转留痕，不允许多端各改各的。</td></tr>
+</tbody>
+</table>
+
+<h3>1.2 分级定义</h3>
+<table>
+<thead><tr><th style="width:70px">级别</th><th style="width:130px">定义</th><th style="width:150px">触达要求</th><th>典型场景</th></tr></thead>
+<tbody>
+<tr><td><span class="tag danger">P1</span></td><td>可能构成违法或导致数据中断</td><td>60 秒内触达；未认领 15 分钟升级；夜间电话兜底</td><td>超标、离线超 2h、密钥过期、SN 不一致、参数被改、虚假标记</td></tr>
+<tr><td><span class="tag warn">P2</span></td><td>影响数据质量或运维履约</td><td>5 分钟内触达；未处理 4 小时升级</td><td>有效数据率不达标、校准超期、恒值、标样核查不合格、工单超时</td></tr>
+<tr><td><span class="tag">P3</span></td><td>提示类，可批量处理</td><td>日报/汇总推送</td><td>合同到期、证书临期、物资临期、视频离线</td></tr>
+</tbody>
+</table>
+
+<h2 id="s2">02 规则模型</h2>
+<p>规则采用「<strong>对象 + 条件表达式 + 持续时长 + 抑制窗口 + 通知策略</strong>」五元组，全部界面可配，新增规则不改代码。</p>
+
+<pre><code>{
+  "rule_code": "DATA_OVER_LIMIT",
+  "name": "污染物超标",
+  "category": "DATA",
+  "level": "P1",
+  "target": { "station_type": ["WASTE_WATER","WASTE_GAS"], "factors": ["*"] },
+  "expression": "value &gt; limit &amp;&amp; dev_flag == 'N' &amp;&amp; prod_flag in ['N']",
+  "duration_sec": 180,
+  "suppress_sec": 3600,
+  "window": { "time": "00:00-23:59", "days": "1-7" },
+  "channels": ["FEISHU", "WXA"],
+  "escalate": { "900": "MGR", "1800": "ORG", "2700": "PHONE" },
+  "enabled": true
+}</code></pre>
+
+<h3>2.1 表达式可用变量</h3>
+<table>
+<thead><tr><th style="width:130px">变量</th><th>含义</th><th>示例</th></tr></thead>
+<tbody>
+<tr><td><code>value</code></td><td>当前值（折算/实测按规则声明）</td><td>—</td></tr>
+<tr><td><code>limit</code></td><td>该因子执行限值</td><td>—</td></tr>
+<tr><td><code>dev_flag</code></td><td>设备标记</td><td>N/D/C/M/T/Td</td></tr>
+<tr><td><code>prod_flag</code></td><td>工况标记</td><td>N/St/Sd/B/F</td></tr>
+<tr><td><code>duration</code></td><td>条件持续秒数</td><td>180</td></tr>
+<tr><td><code>valid_rate</code></td><td>时段有效率</td><td>0.86</td></tr>
+<tr><td><code>gap_min</code></td><td>连续缺失分钟数</td><td>120</td></tr>
+<tr><td><code>variance</code></td><td>窗口内方差（恒值判定）</td><td>0</td></tr>
+<tr><td><code>last_cal_days</code></td><td>距上次校准天数</td><td>35</td></tr>
+</tbody>
+</table>
+
+<h2 id="s3">03 内置规则清单</h2>
+
+<h3>3.1 数据类（DATA）</h3>
+<table>
+<thead><tr><th style="width:150px">规则</th><th style="width:250px">判定</th><th style="width:60px">级别</th><th style="width:150px">抑制</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>DATA_OVER_LIMIT</code></td><td>折算值 &gt; 限值，持续 ≥3 分钟</td><td><span class="tag danger">P1</span></td><td>同站同因子 1h</td><td>排除 D/C/M/T 标记与停运时段</td></tr>
+<tr><td><code>DATA_DEAD_VALUE</code></td><td>连续 10 条数值完全相等（方差=0）</td><td><span class="tag warn">P2</span></td><td>4h</td><td>对应"数据保持"，2025 明令禁止</td></tr>
+<tr><td><code>DATA_NEGATIVE</code></td><td>浓度 &lt; 0 且未修约</td><td><span class="tag warn">P2</span></td><td>4h</td><td>零点漂移，需校准</td></tr>
+<tr><td><code>DATA_ZERO</code></td><td>非停运时段浓度恒为 0 且流量 &gt; 0</td><td><span class="tag warn">P2</span></td><td>4h</td><td>疑似未采样/稀释</td></tr>
+<tr><td><code>DATA_OVER_RANGE</code></td><td>值 ≥ 量程上限</td><td><span class="tag warn">P2</span></td><td>2h</td><td>需核查量程设置</td></tr>
+<tr><td><code>DATA_JUMP</code></td><td>相邻分钟变化率 &gt; 300%</td><td><span class="tag">P3</span></td><td>2h</td><td>仪表异常/信号干扰</td></tr>
+<tr><td><code>DATA_MISSING</code></td><td>连续缺失 &gt; 30 分钟</td><td><span class="tag danger">P1</span></td><td>1h</td><td>区分停电/断网/停机</td></tr>
+<tr><td><code>DATA_OFFLINE</code></td><td>数采仪离线 &gt; 30 分钟</td><td><span class="tag danger">P1</span></td><td>1h</td><td>按 MN 维度</td></tr>
+</tbody>
+</table>
+
+<h3>3.2 有效性类（VALIDITY）</h3>
+<table>
+<thead><tr><th style="width:150px">规则</th><th style="width:250px">判定</th><th style="width:60px">级别</th><th style="width:150px">抑制</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>VAL_RATE_LOW</code></td><td>当日有效率 &lt; 90%</td><td><span class="tag warn">P2</span></td><td>日</td><td>次日 01:00 计算</td></tr>
+<tr><td><code>VAL_RATE_CRITICAL</code></td><td>当日有效率 &lt; 60%</td><td><span class="tag danger">P1</span></td><td>日</td><td>触发考核扣分</td></tr>
+<tr><td><code>VAL_LONG_MAINT</code></td><td>连续 M 标记 &gt; 24 小时</td><td><span class="tag danger">P1</span></td><td>12h</td><td>疑似以维护逃避监管</td></tr>
+<tr><td><code>VAL_LONG_FAULT</code></td><td>连续 D 标记 &gt; 24 小时</td><td><span class="tag danger">P1</span></td><td>12h</td><td>故障长期不修</td></tr>
+<tr><td><code>VAL_FAKE_MARK</code></td><td>标记 C/M/D 但无对应运维记录</td><td><span class="tag danger">P1</span></td><td>6h</td><td><strong>核心差异化能力</strong></td></tr>
+<tr><td><code>VAL_MISS_MARK</code></td><td>有校准记录但时段标记为 N</td><td><span class="tag warn">P2</span></td><td>6h</td><td>漏标，影响有效率</td></tr>
+<tr><td><code>VAL_UNCONFIRMED</code></td><td>联网未确认即上报数据</td><td><span class="tag danger">P1</span></td><td>日</td><td>确认前数据无效</td></tr>
+</tbody>
+</table>
+
+<h3>3.3 设备类（DEVICE）</h3>
+<table>
+<thead><tr><th style="width:150px">规则</th><th style="width:250px">判定</th><th style="width:60px">级别</th><th style="width:150px">抑制</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>DEV_KEY_EXPIRING</code></td><td>密钥 ≤7 天到期</td><td><span class="tag warn">P2</span></td><td>3d</td><td>提前介入，避免断数</td></tr>
+<tr><td><code>DEV_KEY_FAIL</code></td><td>密钥更新失败 ≥2 次</td><td><span class="tag danger">P1</span></td><td>6h</td><td>派人现场处理</td></tr>
+<tr><td><code>DEV_KEY_EXPIRED</code></td><td>密钥已过期</td><td><span class="tag danger">P1</span></td><td>2h</td><td>解密失败，整站中断</td></tr>
+<tr><td><code>DEV_SN_MISMATCH</code></td><td>上报 SN ≠ 台账 SN</td><td><span class="tag danger">P1</span></td><td>日</td><td>疑似翻新机/私自换机</td></tr>
+<tr><td><code>DEV_SN_MISSING</code></td><td>当日 0:05 未上报 SN</td><td><span class="tag warn">P2</span></td><td>日</td><td>—</td></tr>
+<tr><td><code>DEV_PARAM_CHANGE</code></td><td>量程/斜率/截距发生变化</td><td><span class="tag danger">P1</span></td><td>1h</td><td>每次都要通知，不抑制过久</td></tr>
+<tr><td><code>DEV_PARAM_FREQ</code></td><td>7 天内参数变更 &gt; 3 次</td><td><span class="tag danger">P1</span></td><td>7d</td><td>频繁调参属高危行为</td></tr>
+<tr><td><code>DEV_PARAM_MISMATCH</code></td><td>运行参数与备案参数不一致</td><td><span class="tag warn">P2</span></td><td>7d</td><td>—</td></tr>
+<tr><td><code>DEV_CLOCK_DRIFT</code></td><td>现场机时间偏差 &gt; 60 秒</td><td><span class="tag warn">P2</span></td><td>日</td><td>可一键校时</td></tr>
+<tr><td><code>DEV_QC_FAIL</code></td><td>标液核查不合格</td><td><span class="tag danger">P1</span></td><td>—</td><td>该时段数据回溯判无效</td></tr>
+<tr><td><code>DEV_CAL_OVERDUE</code></td><td>距上次校准 &gt; 规定周期</td><td><span class="tag warn">P2</span></td><td>7d</td><td>周期按因子类型配置</td></tr>
+<tr><td><code>DEV_CERT_EXPIRE</code></td><td>CCEP/检定证书 ≤30 天到期</td><td><span class="tag">P3</span></td><td>7d</td><td>—</td></tr>
+</tbody>
+</table>
+
+<h3>3.4 运维类（OPS）</h3>
+<table>
+<thead><tr><th style="width:150px">规则</th><th style="width:250px">判定</th><th style="width:60px">级别</th><th style="width:150px">抑制</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>OPS_PLAN_MISSING</code></td><td>本月应运维站房未排期</td><td><span class="tag warn">P2</span></td><td>7d</td><td>计划覆盖率缺口</td></tr>
+<tr><td><code>OPS_TASK_OVERDUE</code></td><td>任务超过 deadline 未完成</td><td><span class="tag warn">P2</span></td><td>1d</td><td>—</td></tr>
+<tr><td><code>OPS_RESP_SLOW</code></td><td>下发后 30 分钟未接单</td><td><span class="tag warn">P2</span></td><td>6h</td><td>SLA 响应项</td></tr>
+<tr><td><code>OPS_ARRIVE_SLOW</code></td><td>接单后 2 小时未到场</td><td><span class="tag warn">P2</span></td><td>6h</td><td>—</td></tr>
+<tr><td><code>OPS_FIX_SLOW</code></td><td>到场后 24 小时未修复</td><td><span class="tag danger">P1</span></td><td>12h</td><td>故障类任务</td></tr>
+<tr><td><code>OPS_REMOTE_CHECKIN</code></td><td>打卡距离 &gt; 300 m</td><td><span class="tag danger">P1</span></td><td>—</td><td>异地打卡，记录不可用</td></tr>
+<tr><td><code>OPS_NO_RECORD</code></td><td>任务完成但无运维记录</td><td><span class="tag warn">P2</span></td><td>——</td><td>流程断点</td></tr>
+<tr><td><code>OPS_AUDIT_TIMEOUT</code></td><td>提交后 24 小时未审核</td><td><span class="tag warn">P2</span></td><td>1d</td><td>—</td></tr>
+<tr><td><code>OPS_REAGENT_MISMATCH</code></td><td>记录申报更换试剂但无出库单</td><td><span class="tag danger">P1</span></td><td>—</td><td>物资-工单交叉校验</td></tr>
+</tbody>
+</table>
+
+<h3>3.5 安全与监管类（SECURITY / LAW）</h3>
+<table>
+<thead><tr><th style="width:150px">规则</th><th style="width:250px">判定</th><th style="width:60px">级别</th><th style="width:150px">抑制</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>SEC_ILLEGAL_DEVICE</code></td><td>未注册 MN 尝试接入</td><td><span class="tag danger">P1</span></td><td>1h</td><td>—</td></tr>
+<tr><td><code>SEC_VIDEO_OFFLINE</code></td><td>视频通道离线 &gt; 1h</td><td><span class="tag">P3</span></td><td>1d</td><td>—</td></tr>
+<tr><td><code>SEC_POWER_OFF</code></td><td>站房断电</td><td><span class="tag danger">P1</span></td><td>2h</td><td>—</td></tr>
+<tr><td><code>LAW_RECTIFY_OVERDUE</code></td><td>整改超期未回复</td><td><span class="tag danger">P1</span></td><td>3d</td><td>纳入考核</td></tr>
+<tr><td><code>LAW_CONTRACT_EXPIRE</code></td><td>运维合同 ≤30 天到期</td><td><span class="tag">P3</span></td><td>7d</td><td>—</td></tr>
+</tbody>
+</table>
+
+<h2 id="s4">04 降噪</h2>
+<p>没有降噪设计的报警系统，一周之内就会被用户关掉。以下五层必须全部实现：</p>
+<table>
+<thead><tr><th style="width:130px">机制</th><th>做法</th><th>示例</th></tr></thead>
+<tbody>
+<tr><td>防抖（持续时长）</td><td>条件需连续满足 N 秒/条才产生事件</td><td>超标持续 3 分钟才报</td></tr>
+<tr><td>抑制窗口</td><td>同对象同规则 N 秒内只产生一条</td><td>1 小时内同一因子不重复报</td></tr>
+<tr><td>聚合</td><td>同站房多因子同时异常合并为一条"站房异常"</td><td>一次推 1 条而非 8 条</td></tr>
+<tr><td>依赖抑制</td><td>父对象故障时抑制子对象报警</td><td>数采仪离线时不再报"数据缺失"</td></tr>
+<tr><td>维护期静默</td><td>已排期维护/校准时段自动静默</td><td>校准 30 分钟内不报数据异常</td></tr>
+</tbody>
+</table>
+<div class="note">
+<span class="t">一个容易踩的坑</span>
+<p>"维护期静默"必须以<strong>已审核通过的运维记录</strong>为依据，不能用"计划"静默——否则只要排个计划就能屏蔽一切报警，反而成了造假工具。</p>
+</div>
+
+<h2 id="s5">05 生命周期与升级</h2>
+<pre><code>       ┌──────────┐   规则命中    ┌──────┐  认领  ┌───────┐  处置完成  ┌────────┐
+       │ 规则引擎 │ ────────────▶ │ OPEN │ ─────▶ │  ACK  │ ─────────▶ │ CLOSED │
+       └──────────┘               └──┬───┘        └───┬───┘            └────────┘
+                                     │                │
+                          超时未认领 │                │ 判定误报
+                                     ▼                ▼
+                                ┌─────────┐      ┌────────────┐
+                                │ ESCALATE│      │ FALSE_ALARM│──▶ 回流优化规则
+                                └─────────┘      └────────────┘</code></pre>
+
+<h3>5.1 升级策略</h3>
+<table>
+<thead><tr><th style="width:70px">级别</th><th style="width:150px">T+0</th><th style="width:170px">T+15min</th><th style="width:190px">T+30min</th><th>T+2h</th></tr></thead>
+<tbody>
+<tr><td>P1</td><td>飞书卡片 → 值班工程师</td><td>飞书 @运维主管</td><td>短信 + 飞书群公告 → 运维单位管理员</td><td>电话呼叫（可选）</td></tr>
+<tr><td>P2</td><td>飞书卡片 → 责任人</td><td>—</td><td>飞书 @主管</td><td>日报汇总</td></tr>
+<tr><td>P3</td><td>站内消息</td><td>—</td><td>—</td><td>日报汇总</td></tr>
+</tbody>
+</table>
+
+<h3>5.2 自动恢复</h3>
+<p>数据类报警（超标、缺失、离线）支持<strong>自动恢复</strong>：条件不再满足持续 N 分钟后自动置 CLOSED 并推送"已恢复"消息。运维类、监管类报警<strong>必须人工关闭</strong>，防止"自动消失"。</p>
+
+<h2 id="s6">06 消息中心与路由</h2>
+<pre><code>报警事件 ──▶ 消息中心
+              ├─ 1. 选模板（event_type + channel）
+              ├─ 2. 解析接收人（责任工程师 → 值班表 → 角色兜底）
+              ├─ 3. 渠道决策（级别 × 时段 × 用户偏好 × 渠道可用性）
+              ├─ 4. 发送（并行，互不阻塞）
+              │      ├─ 飞书（应用消息 / 群机器人）
+              │      ├─ 小程序订阅消息
+              │      ├─ 公众号模板消息
+              │      └─ 短信
+              ├─ 5. 记录（成功/失败/耗时/错误码）
+              └─ 6. 重试与降级（失败 3 次 → 降级到下一渠道）</code></pre>
+
+<h3>6.1 接收人解析顺序</h3>
+<table>
+<thead><tr><th style="width:70px">优先级</th><th style="width:150px">来源</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>站房责任工程师</td><td>md_station.ops_engineer_id</td></tr>
+<tr><td>2</td><td>当日值班人</td><td>msg_duty（按 org + 日期 + 班次）</td></tr>
+<tr><td>3</td><td>角色兜底</td><td>运维主管 → 运维单位管理员 → 平台管理员</td></tr>
+<tr><td>4</td><td>企业联系人</td><td>仅 P1 且涉及超标时抄送</td></tr>
+</tbody>
+</table>
+
+<h2 id="s7">07 四渠道能力与真实限制</h2>
+<div class="note danger">
+<span class="t">这一节请在需求评审时明确告知甲方</span>
+<p>微信生态的触达能力有硬约束，不是"接了就能保证收到"。公众号模板消息早已改为订阅通知，小程序长期订阅仅限特定类目。把不可靠的渠道写成"主通道"，验收时一定会扯皮。</p>
+</div>
+<table>
+<thead><tr><th style="width:100px">渠道</th><th style="width:170px">能做什么</th><th style="width:230px">硬限制 / 前提</th><th style="width:90px">建议定位</th></tr></thead>
+<tbody>
+<tr><td>飞书</td><td>应用消息、交互卡片（按钮回调）、@人、群机器人、加急</td><td>需企业自建应用 + 权限审批 + <strong>公网可访问的回调地址</strong>；外部用户（企业、监管）通常不在同一组织，需通过群机器人或外部群</td><td><span class="tag ok">主通道</span> 运维团队内部</td></tr>
+<tr><td>微信公众号</td><td>模板消息 / 订阅通知（服务号）</td><td>必须<strong>认证服务号</strong>；用户须关注并绑定 openid；订阅通知为"一次授权一次推送"，触达率不可控</td><td><span class="tag warn">辅助</span> 面向企业与监管的日报/通知</td></tr>
+<tr><td>微信小程序</td><td>订阅消息（一次性）、小程序内报警列表</td><td>长期订阅仅限特定类目（环保类大概率不获批）；一次性订阅需用户每次点击授权</td><td><span class="tag ok">主入口</span> 列表比消息可靠</td></tr>
+<tr><td>短信</td><td>纯文本，必达性最好</td><td>按条计费；模板需报备；营销类时段限制</td><td><span class="tag">兜底</span> 夜间 P1</td></tr>
+</tbody>
+</table>
+
+<h3>7.1 渠道决策矩阵</h3>
+<table>
+<thead><tr><th style="width:80px">级别</th><th style="width:110px">时段</th><th>渠道组合</th></tr></thead>
+<tbody>
+<tr><td>P1</td><td>08:00–20:00</td><td>飞书卡片 + 小程序订阅消息（+ 短信，若 15 分钟未认领）</td></tr>
+<tr><td>P1</td><td>20:00–08:00</td><td>飞书卡片 + <strong>短信立即发</strong>（夜间只看短信）</td></tr>
+<tr><td>P2</td><td>全天</td><td>飞书卡片 + 小程序订阅消息</td></tr>
+<tr><td>P3</td><td>全天</td><td>站内消息 + 每日 09:00 汇总</td></tr>
+</tbody>
+</table>
+
+<h2 id="s8">08 飞书实现方案</h2>
+
+<h3>8.1 两条路径</h3>
+<table>
+<thead><tr><th style="width:150px">方式</th><th>优点</th><th>限制</th><th>适用</th></tr></thead>
+<tbody>
+<tr><td>群自定义机器人 Webhook</td><td>5 分钟接入，无需审批</td><td>只能发消息，不能收回调；无法 @ 指定人（只能 @all 或 @手机号）</td><td>快速验证、P3 汇总</td></tr>
+<tr><td>企业自建应用 + 交互卡片</td><td>可发卡片、可带按钮回调、可 @人、可发单聊、可加急</td><td>需管理员创建应用、申请权限、配置事件订阅地址（公网 HTTPS）</td><td><span class="tag ok">正式方案</span></td></tr>
+</tbody>
+</table>
+
+<h3>8.2 报警卡片结构</h3>
+<pre><code>{
+  "config": { "wide_screen_mode": true },
+  "header": {
+    "template": "red",
+    "title": { "tag": "plain_text", "content": "【P1】化学需氧量超标 · 丰华纸业-水" }
+  },
+  "elements": [
+    { "tag": "div", "fields": [
+        { "is_short": true, "text": { "tag": "lark_md", "content": "**监测值**\n42.6 mg/L" } },
+        { "is_short": true, "text": { "tag": "lark_md", "content": "**限值**\n40 mg/L" } },
+        { "is_short": true, "text": { "tag": "lark_md", "content": "**发生时间**\n11-04 14:17" } },
+        { "is_short": true, "text": { "tag": "lark_md", "content": "**持续**\n3 分钟" } }
+    ]},
+    { "tag": "action", "actions": [
+        { "tag": "button", "text": { "tag": "plain_text", "content": "认领" },
+          "type": "primary", "value": { "action": "ack", "event_id": "AL202611040001" } },
+        { "tag": "button", "text": { "tag": "plain_text", "content": "查看曲线" },
+          "type": "default", "url": "https://xxx/#/data?station=..." }
+    ]}
+  ]
+}</code></pre>
+
+<h3>8.3 回调处理</h3>
+<table>
+<thead><tr><th style="width:170px">回调动作</th><th>服务端处理</th><th>返回</th></tr></thead>
+<tbody>
+<tr><td><code>ack</code> 认领</td><td>校验操作人权限 → 写 alm_action → 更新 event.status=ACK → 通知其他端刷新</td><td>toast「已认领」</td></tr>
+<tr><td><code>close</code> 关闭</td><td>要求填写处置说明（弹表单）→ 写 action → CLOSED</td><td>更新卡片为灰色</td></tr>
+<tr><td>重复点击</td><td>幂等判断（已 ACK 则忽略）</td><td>toast「已被 XXX 认领」</td></tr>
+</tbody>
+</table>
+<p class="small">回调地址须在 3 秒内响应，业务处理走异步，避免飞书重试导致重复。</p>
+
+<h2 id="s9">09 微信公众号实现方案</h2>
+
+<h3>9.1 前提条件（逐条确认，缺一不可）</h3>
+<ul>
+<li>主体为<strong>已认证的服务号</strong>（订阅号无模板消息能力）。</li>
+<li>已配置<strong>服务器地址（公网 HTTPS）</strong>、Token、EncodingAESKey。</li>
+<li>用户已关注公众号，且系统通过网页授权拿到 <code>openid</code> 完成绑定。</li>
+<li>消息模板已在后台申请通过（环保告警类模板需要合理措辞，避免被判营销）。</li>
+</ul>
+
+<h3>9.2 绑定流程</h3>
+<pre><code>用户在小程序/Web 登录 → 点击"绑定微信通知"
+  → 跳转公众号网页授权（snsapi_base 静默 / snsapi_userinfo）
+  → 回调带回 code → 换取 openid/unionid
+  → 写入 msg_subscribe（user_id ↔ openid）
+  → 页面提示"已开启，未关注请先关注"</code></pre>
+
+<h3>9.3 降级方案</h3>
+<div class="note warn">
+<p>若甲方<strong>没有认证服务号</strong>，公众号推送直接不成立。替代方案按优先级：</p>
+<p>① 小程序订阅消息（推荐）；② 服务号内嵌 H5 + 站内消息（用户主动查看）；③ 短信兜底；④ 若甲方是企业微信用户，改走企业微信应用消息（能力接近飞书）。</p>
+</div>
+
+<h2 id="s10">10 小程序订阅消息方案</h2>
+<table>
+<thead><tr><th style="width:150px">项</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>模板类型</td><td>优先申请"设备故障提醒""报警通知"类模板；长期订阅需类目支持，环保类通常只能一次性订阅</td></tr>
+<tr><td>授权策略</td><td>用户进入小程序首页时批量请求授权（一次最多 3 条）；每次处理报警时再补一次授权，形成"用一次攒一条"的循环</td></tr>
+<tr><td>参数</td><td>thing1 站房名 / phrase2 报警类型 / time3 时间 / thing4 处置提示</td></tr>
+<tr><td>失败处理</td><td>43101（用户拒收）→ 标记该用户不可用，转飞书/短信</td></tr>
+<tr><td>可靠性</td><td><strong>不承诺必达</strong>；所有报警在小程序"报警列表"中永久可查，消息只是提醒</td></tr>
+</tbody>
+</table>
+
+<h2 id="s11">11 值班表与免打扰</h2>
+<table>
+<thead><tr><th style="width:150px">机制</th><th>规则</th></tr></thead>
+<tbody>
+<tr><td>值班表</td><td>按组织 + 日期 + 班次（白/夜）配置，支持导入；当天值班人优先接收 P1</td></tr>
+<tr><td>免打扰</td><td>P2/P3 在 22:00–08:00 不推送，合并到次日 08:30 汇总；<strong>P1 不受免打扰限制</strong></td></tr>
+<tr><td>休假代理</td><td>人员请假时可指定代理人，代理期内接收全部消息</td></tr>
+<tr><td>渠道偏好</td><td>用户可自选"仅飞书"或"飞书+短信"，但 P1 的短信由系统强制，不可关闭</td></tr>
+</tbody>
+</table>
+
+<h2 id="s12">12 可靠性设计与验收</h2>
+
+<h3>12.1 发送可靠性</h3>
+<table>
+<thead><tr><th style="width:130px">环节</th><th>策略</th></tr></thead>
+<tbody>
+<tr><td>异步解耦</td><td>报警产生后只写库 + 投递 MQ，推送由独立消费者处理，推送失败不影响报警本身</td></tr>
+<tr><td>重试</td><td>指数退避 3 次（5s / 30s / 120s），仍失败则降级到下一渠道</td></tr>
+<tr><td>限流</td><td>单用户 1 分钟 ≤ 5 条，超出合并为摘要，防轰炸</td></tr>
+<tr><td>去重</td><td>event_id + channel + receiver 唯一约束</td></tr>
+<tr><td>可观测</td><td>发送成功率、平均耗时、失败 Top 错误码按小时统计</td></tr>
+<tr><td>补偿</td><td>每日 02:00 扫描"未成功送达的 P1"，重新推送并生成待办</td></tr>
+</tbody>
+</table>
+
+<h3>12.2 验收口径</h3>
+<ul>
+<li>P1 报警从产生到飞书可见：<strong>P95 ≤ 60 秒</strong>。</li>
+<li>推送失败可查：每条报警可看到"发了哪些渠道、成功几个、失败原因"。</li>
+<li>端到端一致：飞书认领后，Web 与小程序在 5 秒内同步状态。</li>
+<li>压测：1 分钟内产生 200 条报警，无消息丢失、无重复推送。</li>
+</ul>
+
+</div>
+
+<div class="doc-foot">
+  <span>污染源自动监控设施第三方运维信息管理系统 · 报警与推送设计 v1.0</span>
+  <span>2026-11-04</span>
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# Java 工程
+target/
+!.mvn/wrapper/maven-wrapper.jar
+*.jar
+*.war
+*.class
+
+# 本机工具链（独立 Maven 包，不纳入版本库）
+.tools/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# 日志与临时文件
+*.log
+logs/

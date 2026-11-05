@@ -1,0 +1,38 @@
+# ---- Java / Maven ----
+target/
+*.class
+*.jar
+!backend/.tools/**/*.jar
+.mvn/wrapper/maven-wrapper.jar
+
+# ---- 内置工具（本机变通，不入库者除外）----
+# backend/.tools 是内置 Maven，体积大但保证团队开箱即用；如不入库请解开下面注释
+# backend/.tools/
+
+# ---- Node / 前端 ----
+node_modules/
+web/dist/
+*.tsbuildinfo
+*.local
+.DS_Store
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+!.vscode/extensions.json
+
+# ---- 日志与运行时 ----
+logs/
+*.log
+data/
+*.pid
+
+# ---- 环境与密钥 ----
+.env
+.env.*
+!.env.example
+
+# ---- OS ----
+Thumbs.db
+desktop.ini

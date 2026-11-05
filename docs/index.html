@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>需求分析交付物 · 污染源自动监控设施第三方运维信息管理系统</title>
+<link rel="stylesheet" href="assets/doc.css">
+</head>
+<body>
+<div class="page">
+
+<div class="doc-head">
+  <div class="doc-kicker">需求分析交付物 · v1.0</div>
+  <h1>污染源自动监控设施<br>第三方运维信息管理系统</h1>
+  <p class="doc-sub">五份文档 + 两张可交互架构图。基于 HJ 212—2025 与参考平台（成都/四川）的功能结构编写。</p>
+  <div class="doc-meta">
+    <span><b>日期</b>2026-11-04</span>
+    <span><b>文档</b>5 份</span>
+    <span><b>图纸</b>2 张</span>
+    <span><b>DDL</b>schema.sql</span>
+    <span><b>状态</b>评审稿</span>
+  </div>
+</div>
+
+<div class="doc-body">
+
+<h2>文档</h2>
+<table>
+<thead><tr><th style="width:56px">#</th><th style="width:230px">文件</th><th>内容</th><th style="width:90px">规模</th></tr></thead>
+<tbody>
+<tr>
+  <td>00</td>
+  <td><a href="00-架构决策记录.html"><b>架构决策记录（ADR）</b></a></td>
+  <td>已拍板的四件事：系统主体=监管方、数据源双模适配、微信生态公网部署、服务端语言待确认；含能力差异矩阵与合同风险提示</td>
+  <td>约 5 页</td>
+</tr>
+<tr>
+  <td>01</td>
+  <td><a href="01-需求规格说明书.html"><b>需求规格说明书</b></a></td>
+  <td>背景目标、范围边界、6 类角色与权限矩阵、运维证据链、<strong>26 个一级模块 / 120+ 功能点</strong>、15 条业务规则、非功能需求、容量估算、分期验收、10 个待确认问题</td>
+  <td>约 18 页</td>
+</tr>
+<tr>
+  <td>02</td>
+  <td><a href="02-数据库设计.html"><b>核心库表设计</b></a></td>
+  <td>设计原则、ER 总览、<strong>55 张表清单</strong>、8 张核心表字段级设计、TDengine 时序库设计、索引分区策略、4 段关键 SQL 口径</td>
+  <td>约 14 页</td>
+</tr>
+<tr>
+  <td>03</td>
+  <td><a href="03-HJ212-2025接入方案.html"><b>HJ 212—2025 接入方案</b></a></td>
+  <td>标准要求映射、报文结构与字段、命令编码、<strong>SM4 与密钥管理</strong>、设备身份与联网确认、双维度标记、附录 G 判定、接入网关流水线、8 类异常处理、18 条测试用例</td>
+  <td>约 12 页</td>
+</tr>
+<tr>
+  <td>04</td>
+  <td><a href="04-报警与推送设计.html"><b>报警与推送路由设计</b></a></td>
+  <td>分级定义、规则模型、<strong>38 条内置规则</strong>、五层降噪、生命周期与升级、消息中心路由、四渠道真实限制、飞书卡片实现、公众号与小程序方案、可靠性验收</td>
+  <td>约 12 页</td>
+</tr>
+<tr>
+  <td>05</td>
+  <td><a href="05-页面清单与交互说明.html"><b>页面清单与交互说明</b></a></td>
+  <td>状态色板与栅格、信息架构、<strong>46 个 Web 页面 + 15 个小程序页面</strong>（含路由/角色/核心元素）、4 条关键交互流程、通用组件、空态规范、原型优先级</td>
+  <td>约 12 页</td>
+</tr>
+</tbody>
+</table>
+
+<h2>图纸</h2>
+<table>
+<thead><tr><th style="width:56px">#</th><th style="width:230px">文件</th><th>说明</th><th style="width:120px">交互能力</th></tr></thead>
+<tbody>
+<tr>
+  <td>D1</td>
+  <td><a href="diagrams/architecture.html"><b>技术架构图</b></a></td>
+  <td>现场端 → 接入网关 → 计算与判定 → 消息中心 → 飞书/微信/Web；含 DMZ 与存储分区、三条导览路径</td>
+  <td>明暗切换 / 缩放 / 导出</td>
+</tr>
+<tr>
+  <td>D2</td>
+  <td><a href="diagrams/backend-flow.html"><b>后端流程图</b></a></td>
+  <td>报文接入泳道图：拆包 CRC → SM4 解密解析 → 幂等应答 → 入库计算 → 报警判定 → 多端推送</td>
+  <td>明暗切换 / 缩放 / 导出</td>
+</tr>
+</tbody>
+</table>
+
+<h2>配套文件</h2>
+<ul>
+<li><a href="schema.sql"><code>schema.sql</code></a> — 可直接执行的建表脚本（MySQL 8.0），含注释、唯一索引、按月分区与 TDengine 超级表定义。</li>
+<li class="small">两张图由 Archify 生成，规格与产物均通过 9/9 校验（0 error / 0 warning），桌面端 1440~2048 宽度下无溢出。</li>
+</ul>
+
+<h2>建议的评审顺序</h2>
+<ol>
+<li><strong>先看 01 的第 3、4 节</strong>（角色 + 证据链）——这两个决定系统形态，其他都是细节。</li>
+<li><strong>再看 05 的页面清单</strong>——对照参考平台，确认有没有漏模块、多余模块。</li>
+<li><strong>然后 03 的接入方案</strong>——技术风险最集中的部分，特别是数据源到底是自建接入还是对接上级平台。</li>
+<li><strong>最后 02 和 04</strong>——实施阶段的依据，评审时可略过细节。</li>
+</ol>
+
+<div class="note ok">
+<span class="t">三项已全部确定</span>
+<p>✅ 系统主体 = <strong>监管方</strong>（多租户，运维单位入驻）；✅ 数据源 = <strong>直连数采仪</strong>（自建 Netty 接入，原始报文/标记/参数/反控全部可用）；✅ 微信 = 已认证服务号「<strong>海兰天澄</strong>」（成都海兰天澄科技股份有限公司）+ 公网部署。详见 <a href="00-架构决策记录.html">ADR</a>。</p>
+</div>
+
+<h2>代码工程</h2>
+<p>可运行骨架在仓库根目录：<code>server/</code>（NestJS）、<code>web/</code>（Vue3）、<code>deploy/docker-compose.yml</code>。启动方式见根目录 <code>README.md</code>。</p>
+<ul>
+<li><code>server/src/common/</code> — 多租户上下文、JWT 鉴权、角色守卫、统一响应/异常、审计拦截器</li>
+<li><code>server/src/modules/ingest/</code> — HJ212 拆包 / CRC16 / 编解码 / TCP 服务 / HTTP 入口（已通过 14 项运行时校验）</li>
+<li><code>server/src/database/</code> — 实体、种子数据（admin / Admin@123）</li>
+<li><code>web/</code> — 登录、主框架、工作台、站房列表</li>
+</ul>
+
+</div>
+
+<div class="doc-foot">
+  <span>需求分析交付物索引 · 2026-11-04</span>
+  <span>v1.0</span>
+</div>
+
+</div>
+</body>
+</html>

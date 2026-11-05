@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>02 · 数据库设计 — 污染源自动监控设施第三方运维信息管理系统</title>
+<link rel="stylesheet" href="assets/doc.css">
+</head>
+<body>
+<div class="page">
+
+<div class="fnav">
+  <a href="01-需求规格说明书.html">01 需求规格</a>
+  <a class="cur" href="02-数据库设计.html">02 库表设计</a>
+  <a href="03-HJ212-2025接入方案.html">03 接入方案</a>
+  <a href="04-报警与推送设计.html">04 报警推送</a>
+  <a href="05-页面清单与交互说明.html">05 页面清单</a>
+  <a href="diagrams/architecture.html">技术架构图</a>
+  <a href="diagrams/backend-flow.html">后端流程图</a>
+</div>
+
+<div class="doc-head">
+  <div class="doc-kicker">数据库设计说明书 · DBD v1.0</div>
+  <h1>核心库表设计</h1>
+  <p class="doc-sub">关系库（业务）+ 时序库（监测数据）+ 对象存储（多媒体）三库分离；多租户行级隔离，全表审计字段。</p>
+  <div class="doc-meta">
+    <span><b>版本</b>v1.0</span>
+    <span><b>日期</b>2026-11-04</span>
+    <span><b>关系库</b>MySQL 8.0</span>
+    <span><b>时序库</b>TDengine 3.x</span>
+    <span><b>对象存储</b>MinIO / OSS</span>
+    <span><b>DDL</b>见 schema.sql</span>
+  </div>
+</div>
+
+<div class="doc-body">
+
+<h2 id="s0">目录</h2>
+<div class="toc">
+  <a href="#s1"><span class="n">01</span>设计原则</a>
+  <a href="#s2"><span class="n">02</span>实体关系总览</a>
+  <a href="#s3"><span class="n">03</span>表清单（55 张）</a>
+  <a href="#s4"><span class="n">04</span>核心表字段设计</a>
+  <a href="#s5"><span class="n">05</span>时序库设计</a>
+  <a href="#s6"><span class="n">06</span>索引、分区与归档</a>
+  <a href="#s7"><span class="n">07</span>关键 SQL 口径</a>
+</div>
+
+<h2 id="s1">01 设计原则</h2>
+<table>
+<thead><tr><th style="width:130px">原则</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>三库分离</td><td>业务数据入 MySQL；分钟/小时数据入 TDengine；照片、谱图、视频入 MinIO。任何大字段都不进 MySQL。</td></tr>
+<tr><td>多租户行级隔离</td><td>所有业务表带 <code>tenant_id</code>，MyBatis 拦截器自动注入；跨租户查询仅超管可用且强制记审计。</td></tr>
+<tr><td>纵向存数据</td><td>监测数据按 <code>(station_id, factor_code, ts)</code> 纵向存储，新增因子零改表；前端按因子透视。</td></tr>
+<tr><td>双维度标记</td><td><code>dev_flag</code>（设备标记 N/D/C/M/T/Td）与 <code>prod_flag</code>（工况标记）分列，绝不合并成"有效/无效"。</td></tr>
+<tr><td>只追加审计</td><td><code>sys_audit_log</code> 只允许 INSERT，数据库层用触发器/权限禁止 UPDATE、DELETE。</td></tr>
+<tr><td>软删除 + 乐观锁</td><td>业务表统一 <code>deleted</code>、<code>version</code>；物理删除仅超管脚本执行。</td></tr>
+<tr><td>快照留痕</td><td>参数、限值、合同等"会变但需追溯"的数据，变更时写快照表，不回改历史。</td></tr>
+<tr><td>编码可读</td><td>站房、设备、报警、整改单均使用业务可读编码（如 <code>FHZY-S-01</code>），便于现场沟通与工单引用。</td></tr>
+</tbody>
+</table>
+
+<h2 id="s2">02 实体关系总览</h2>
+<pre><code>sys_tenant 租户
+  └─ sys_org 组织（监管方 / 运维单位 / 企业）
+       ├─ sys_user 用户 ─── sys_user_role ─── sys_role ─── sys_role_menu
+       └─ md_contract 运维合同 ── md_contract_station
+
+md_enterprise 企业
+  ├─ md_station 站房（1:N）
+  │    ├─ md_station_outlet ── md_outlet 排口
+  │    ├─ md_station_factor 站房因子（含量程）
+  │    ├─ md_device 设备（分析仪 / 数采仪 / 流量计）
+  │    │    ├─ dev_param_snapshot 参数快照
+  │    │    └─ ts_raw_signal 原始信号
+  │    ├─ ops_plan 运维计划 ── ops_plan_item
+  │    │    └─ ops_task 任务 ── ops_task_log
+  │    ├─ ops_record 运维记录 ── ops_record_item
+  │    │    ├─ ops_record_media 多媒体
+  │    │    ├─ ops_checkin 打卡
+  │    │    └─ ops_audit 审核
+  │    ├─ ts_data_minute / hour / day 监测数据
+  │    ├─ alm_event 报警事件 ── alm_action 处置
+  │    └─ doc_file 档案
+  └─ law_rectify 整改通知 ── law_rectify_reply</code></pre>
+
+<h2 id="s3">03 表清单</h2>
+
+<h3>3.1 系统域（12 张）</h3>
+<table>
+<thead><tr><th style="width:190px">表名</th><th style="width:130px">中文</th><th>关键字段</th></tr></thead>
+<tbody>
+<tr><td><code>sys_tenant</code></td><td>租户</td><td>tenant_code, name, type(REG/ORG/ENT), status</td></tr>
+<tr><td><code>sys_region</code></td><td>区域</td><td>parent_id, code, name, level(1省 2市 3区县 4园区)</td></tr>
+<tr><td><code>sys_org</code></td><td>组织</td><td>tenant_id, parent_id, org_type, name, region_id</td></tr>
+<tr><td><code>sys_user</code></td><td>用户</td><td>username, password_hash, real_name, phone, org_id, cert_no, status</td></tr>
+<tr><td><code>sys_role</code></td><td>角色</td><td>role_code(SUP/REG/ORG/MGR/ENG/ENT), name, data_scope</td></tr>
+<tr><td><code>sys_user_role</code></td><td>用户角色</td><td>user_id, role_id</td></tr>
+<tr><td><code>sys_menu</code></td><td>菜单/权限点</td><td>parent_id, name, path, perms, type(M/C/B), sort</td></tr>
+<tr><td><code>sys_role_menu</code></td><td>角色菜单</td><td>role_id, menu_id</td></tr>
+<tr><td><code>sys_dict</code></td><td>字典</td><td>dict_code, name</td></tr>
+<tr><td><code>sys_dict_item</code></td><td>字典项</td><td>dict_code, item_value, item_label, sort, ext_json</td></tr>
+<tr><td><code>sys_audit_log</code></td><td>审计日志</td><td>user_id, module, action, biz_id, before_json, after_json, ip, ua, created_at</td></tr>
+<tr><td><code>sys_config</code></td><td>系统参数</td><td>config_key, config_value, remark</td></tr>
+</tbody>
+</table>
+
+<h3>3.2 主数据域（11 张）</h3>
+<table>
+<thead><tr><th style="width:190px">表名</th><th style="width:130px">中文</th><th>关键字段</th></tr></thead>
+<tbody>
+<tr><td><code>md_enterprise</code></td><td>企业</td><td>credit_code, name, industry_code, permit_no, address, lng, lat, is_key_unit, region_id</td></tr>
+<tr><td><code>md_station</code></td><td>站房</td><td>station_code, name, type(废水/废气/VOC/垃圾焚烧/空气站/地下水), enterprise_id, lng, lat, biz_status, ops_org_id, online_date</td></tr>
+<tr><td><code>md_outlet</code></td><td>排放口</td><td>outlet_code, name, type, enterprise_id</td></tr>
+<tr><td><code>md_station_outlet</code></td><td>站房-排口</td><td>station_id, outlet_id</td></tr>
+<tr><td><code>md_device</code></td><td>设备</td><td>device_code, sn, category(ANALYZER/DTU/FLOW), vendor, model, range_min, range_max, firmware, ccep_no, install_date, status</td></tr>
+<tr><td><code>md_factor</code></td><td>因子字典</td><td>factor_code(HJ212 编码), name, unit, category, default_min, default_max</td></tr>
+<tr><td><code>md_station_factor</code></td><td>站房因子</td><td>station_id, factor_code, device_id, unit, range_min, range_max, std_limit, is_main, sort</td></tr>
+<tr><td><code>md_standard</code></td><td>执行标准</td><td>std_code, name, industry_code, medium(水/气)</td></tr>
+<tr><td><code>md_standard_limit</code></td><td>标准限值</td><td>std_code, factor_code, limit_type(日均/时均/瞬时), limit_value, effective_from, effective_to</td></tr>
+<tr><td><code>md_contract</code></td><td>运维合同</td><td>contract_no, org_id, enterprise_id, start_date, end_date, sla_json, amount, status</td></tr>
+<tr><td><code>md_contract_station</code></td><td>合同站房</td><td>contract_id, station_id</td></tr>
+</tbody>
+</table>
+
+<h3>3.3 数据域（10 张）</h3>
+<table>
+<thead><tr><th style="width:190px">表名</th><th style="width:130px">中文</th><th>关键字段 / 存储位置</th></tr></thead>
+<tbody>
+<tr><td><code>ts_data_minute</code></td><td>分钟数据</td><td>ts, station_id, factor_code, value, dev_flag, prod_flag, raw_value, quality — <span class="tag">TDengine</span></td></tr>
+<tr><td><code>ts_data_hour</code></td><td>小时数据</td><td>ts, station_id, factor_code, avg_value, max_value, min_value, valid_cnt, total_cnt, flag — <span class="tag">TDengine</span></td></tr>
+<tr><td><code>ts_data_day</code></td><td>日数据</td><td>ts, station_id, factor_code, avg_value, max_value, min_value, emission, valid_rate — <span class="tag">TDengine</span></td></tr>
+<tr><td><code>ts_raw_signal</code></td><td>原始信号</td><td>ts, station_id, device_sn, signal_value, zero_signal, span_signal, peak_area, sample_no — <span class="tag">TDengine</span></td></tr>
+<tr><td><code>ts_qc_check</code></td><td>质控记录</td><td>station_id, factor_code, check_type(标液核查/校准/比对), std_value, measured_value, deviation, passed, check_time</td></tr>
+<tr><td><code>ts_missing</code></td><td>缺失记录</td><td>station_id, factor_code, begin_time, end_time, minutes, reason(停电/断网/停机/故障), recalled</td></tr>
+<tr><td><code>dev_param_snapshot</code></td><td>参数快照</td><td>device_id, param_code, param_value, collected_at, source</td></tr>
+<tr><td><code>dev_param_change</code></td><td>参数变更</td><td>device_id, param_code, old_value, new_value, change_time, operator, evidence_file</td></tr>
+<tr><td><code>dev_online_log</code></td><td>在线状态</td><td>station_id, dtu_sn, last_heartbeat, online, offline_minutes</td></tr>
+<tr><td><code>dev_key_state</code></td><td>密钥状态</td><td>device_sn, key_version, updated_at, expire_at, fail_count</td></tr>
+</tbody>
+</table>
+
+<h3>3.4 运维域（13 张）</h3>
+<table>
+<thead><tr><th style="width:190px">表名</th><th style="width:130px">中文</th><th>关键字段</th></tr></thead>
+<tbody>
+<tr><td><code>ops_plan</code></td><td>运维计划</td><td>plan_no, station_id, period(YYYY-MM), plan_type, planned_date, status(DRAFT/SUBMITTED/APPROVED/DONE/MISSED)</td></tr>
+<tr><td><code>ops_plan_item</code></td><td>计划明细</td><td>plan_id, ops_type(巡检/校准/校验/标液核查/试剂更换/物件更换/故障报告/故障维修), plan_date, assignee_id</td></tr>
+<tr><td><code>ops_task</code></td><td>任务</td><td>task_no, plan_item_id, station_id, ops_type, assignee_id, deadline, status, accept_at, arrive_at, finish_at</td></tr>
+<tr><td><code>ops_task_log</code></td><td>任务流转</td><td>task_id, action(下发/接单/到场/提交/改派/退回/关闭), operator, at, remark</td></tr>
+<tr><td><code>ops_record</code></td><td>运维记录</td><td>record_no, task_id, station_id, ops_type, engineer_id, begin_time, end_time, conclusion, status(DRAFT/SUBMITTED/APPROVED/REJECTED)</td></tr>
+<tr><td><code>ops_record_item</code></td><td>记录明细</td><td>record_id, item_code, item_name, value_type, value, unit, normal_flag</td></tr>
+<tr><td><code>ops_record_media</code></td><td>多媒体</td><td>record_id, type(PHOTO/VIDEO/FILE), object_key, watermark_json, sha256</td></tr>
+<tr><td><code>ops_checkin</code></td><td>打卡</td><td>task_id, user_id, lng, lat, distance_m, photo_key, in_at, out_at, valid</td></tr>
+<tr><td><code>ops_audit</code></td><td>审核</td><td>record_id, auditor_id, result(PASS/REJECT), reason, at</td></tr>
+<tr><td><code>ops_template</code></td><td>作业模板</td><td>station_type, ops_type, name, version</td></tr>
+<tr><td><code>ops_template_item</code></td><td>模板项</td><td>template_id, item_code, label, value_type(NUMBER/TEXT/SELECT/PHOTO/SIGN), required, std_value, unit</td></tr>
+<tr><td><code>ops_attendance</code></td><td>考勤</td><td>user_id, date, check_in, check_out, work_hours, on_site_hours</td></tr>
+<tr><td><code>ops_vehicle</code></td><td>车辆</td><td>plate_no, model, owner_id, org_id, terminal_sn</td></tr>
+</tbody>
+</table>
+
+<h3>3.5 物资 / 报警 / 监管 / 档案域（19 张）</h3>
+<table>
+<thead><tr><th style="width:190px">表名</th><th style="width:130px">中文</th><th>关键字段</th></tr></thead>
+<tbody>
+<tr><td><code>inv_item</code></td><td>物资档案</td><td>item_code, name, category(试剂/标液/备件/耗材), spec, unit, shelf_life_days, safety_stock</td></tr>
+<tr><td><code>inv_warehouse</code></td><td>仓库</td><td>name, org_id, address, keeper_id</td></tr>
+<tr><td><code>inv_stock</code></td><td>库存</td><td>warehouse_id, item_id, batch_no, qty, expire_date</td></tr>
+<tr><td><code>inv_flow</code></td><td>出入库流水</td><td>item_id, batch_no, type(IN/OUT/RETURN/SCRAP), qty, station_id, device_id, task_id, operator, at</td></tr>
+<tr><td><code>inv_apply</code></td><td>领用申请</td><td>apply_no, applicant_id, station_id, task_id, status, approver_id, approved_at</td></tr>
+<tr><td><code>inv_apply_item</code></td><td>申请明细</td><td>apply_id, item_id, qty</td></tr>
+<tr><td><code>alm_rule</code></td><td>报警规则</td><td>rule_code, name, category, level, expression, duration_sec, suppress_sec, channels, enabled</td></tr>
+<tr><td><code>alm_rule_target</code></td><td>规则对象</td><td>rule_id, station_id, factor_code, ops_type</td></tr>
+<tr><td><code>alm_event</code></td><td>报警事件</td><td>event_no, rule_id, station_id, factor_code, level, value, threshold, begin_at, end_at, status, owner_id</td></tr>
+<tr><td><code>alm_action</code></td><td>处置记录</td><td>event_id, action(认领/转派/处置/关闭/误报), operator, at, remark</td></tr>
+<tr><td><code>msg_template</code></td><td>消息模板</td><td>event_type, channel, title_tpl, body_tpl, card_json</td></tr>
+<tr><td><code>msg_channel</code></td><td>渠道配置</td><td>channel(FEISHU/MP/WXA/SMS), app_id, secret_ref, enabled</td></tr>
+<tr><td><code>msg_send_log</code></td><td>发送日志</td><td>event_id, channel, receiver, template_code, status, retry_cnt, error_msg, sent_at</td></tr>
+<tr><td><code>msg_subscribe</code></td><td>订阅绑定</td><td>user_id, channel, openid, unionid, subscribed_types, bind_at</td></tr>
+<tr><td><code>msg_duty</code></td><td>值班表</td><td>org_id, date, shift, user_id, phone</td></tr>
+<tr><td><code>law_inspection</code></td><td>执法检查</td><td>inspect_no, enterprise_id, station_id, inspector_id, at, result, items_json</td></tr>
+<tr><td><code>law_rectify</code></td><td>整改通知</td><td>notice_no, inspection_id, issue, basis, deadline, status</td></tr>
+<tr><td><code>law_rectify_reply</code></td><td>整改回复</td><td>notice_id, content, files_json, reply_at, reviewer_id, review_result</td></tr>
+<tr><td><code>doc_file</code></td><td>档案</td><td>category, station_id, name, object_key, size, sha256, expire_date, version, uploader</td></tr>
+</tbody>
+</table>
+
+<h2 id="s4">04 核心表字段设计</h2>
+
+<h3>4.1 md_station 站房（核心主数据）</h3>
+<table>
+<thead><tr><th style="width:170px">字段</th><th style="width:160px">类型</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>id</code></td><td>BIGINT</td><td>主键</td></tr>
+<tr><td><code>tenant_id</code></td><td>BIGINT</td><td>租户</td></tr>
+<tr><td><code>station_code</code></td><td>VARCHAR(32)</td><td>业务编码，可读，唯一（如 FHZY-S-01）</td></tr>
+<tr><td><code>name</code></td><td>VARCHAR(100)</td><td>站房名称，命名规则：企业简称-介质</td></tr>
+<tr><td><code>station_type</code></td><td>VARCHAR(20)</td><td>WASTE_WATER / WASTE_GAS / VOC / INCINERATION / AIR / GROUNDWATER</td></tr>
+<tr><td><code>enterprise_id</code></td><td>BIGINT</td><td>所属企业</td></tr>
+<tr><td><code>region_id</code></td><td>BIGINT</td><td>所属区域（冗余，便于按区域过滤）</td></tr>
+<tr><td><code>lng</code> / <code>lat</code></td><td>DECIMAL(10,7)</td><td>经纬度，用于电子围栏与地图</td></tr>
+<tr><td><code>address</code></td><td>VARCHAR(255)</td><td>详细地址</td></tr>
+<tr><td><code>biz_status</code></td><td>VARCHAR(16)</td><td>业务态：NORMAL / ABNORMAL / STOPPED / MAINTAINING</td></tr>
+<tr><td><code>stop_reason</code></td><td>VARCHAR(255)</td><td>停运原因（biz_status=STOPPED 必填）</td></tr>
+<tr><td><code>ops_org_id</code></td><td>BIGINT</td><td>责任运维单位</td></tr>
+<tr><td><code>ops_engineer_id</code></td><td>BIGINT</td><td>责任运维工程师</td></tr>
+<tr><td><code>online_date</code></td><td>DATE</td><td>投运日期（用于验收期判断）</td></tr>
+<tr><td><code>is_focus</code></td><td>TINYINT</td><td>是否重点关注（对应前端"重点关注"筛选）</td></tr>
+<tr><td><code>qr_token</code></td><td>VARCHAR(64)</td><td>站房二维码令牌，防伪造</td></tr>
+<tr><td><code>remark</code></td><td>VARCHAR(500)</td><td>备注</td></tr>
+<tr><td colspan="3" class="small">公共字段：created_at, created_by, updated_at, updated_by, deleted, version</td></tr>
+</tbody>
+</table>
+
+<h3>4.2 md_device 设备</h3>
+<table>
+<thead><tr><th style="width:170px">字段</th><th style="width:160px">类型</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>device_code</code></td><td>VARCHAR(32)</td><td>设备业务编码</td></tr>
+<tr><td><code>station_id</code></td><td>BIGINT</td><td>所属站房</td></tr>
+<tr><td><code>category</code></td><td>VARCHAR(16)</td><td>ANALYZER 分析仪 / DTU 数采仪 / FLOW 流量计 / OTHER</td></tr>
+<tr><td><code>sn</code></td><td>VARCHAR(64)</td><td>设备唯一标识（HJ 212—2025 强要求），<strong>唯一索引</strong></td></tr>
+<tr><td><code>vendor_code</code></td><td>VARCHAR(32)</td><td>厂商识别代码（SN 组成之一）</td></tr>
+<tr><td><code>cpu_id</code> / <code>mac_addr</code></td><td>VARCHAR(64)</td><td>硬件指纹，激活时比对</td></tr>
+<tr><td><code>vendor</code> / <code>model</code></td><td>VARCHAR(64)</td><td>厂商、型号</td></tr>
+<tr><td><code>ccep_no</code></td><td>VARCHAR(64)</td><td>环保产品认证证书号</td></tr>
+<tr><td><code>firmware</code></td><td>VARCHAR(32)</td><td>固件版本（判断是否支持 2025 协议）</td></tr>
+<tr><td><code>range_min</code> / <code>range_max</code></td><td>DECIMAL(18,6)</td><td>量程</td></tr>
+<tr><td><code>install_date</code></td><td>DATE</td><td>安装日期</td></tr>
+<tr><td><code>net_status</code></td><td>VARCHAR(16)</td><td>REGISTERED / ACTIVATED / CONFIRMED（联网确认状态）</td></tr>
+<tr><td><code>status</code></td><td>VARCHAR(16)</td><td>IN_USE / STOPPED / REPLACED / SCRAPPED</td></tr>
+</tbody>
+</table>
+
+<h3>4.3 ops_task 任务（SLA 计时核心）</h3>
+<table>
+<thead><tr><th style="width:170px">字段</th><th style="width:160px">类型</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>task_no</code></td><td>VARCHAR(32)</td><td>任务编号，唯一</td></tr>
+<tr><td><code>plan_item_id</code></td><td>BIGINT</td><td>来源计划明细，可空（仅故障类允许空）</td></tr>
+<tr><td><code>station_id</code></td><td>BIGINT</td><td>站房</td></tr>
+<tr><td><code>ops_type</code></td><td>VARCHAR(24)</td><td>巡检 / 校准 / 校验 / 标液核查 / 试剂更换 / 物件更换 / 故障报告 / 故障维修</td></tr>
+<tr><td><code>source</code></td><td>VARCHAR(16)</td><td>PLAN 计划 / ALARM 报警 / MANUAL 手工</td></tr>
+<tr><td><code>assignee_id</code></td><td>BIGINT</td><td>执行人</td></tr>
+<tr><td><code>dispatch_at</code></td><td>DATETIME</td><td>下发时间（响应时长起点）</td></tr>
+<tr><td><code>accept_at</code></td><td>DATETIME</td><td>接单时间</td></tr>
+<tr><td><code>arrive_at</code></td><td>DATETIME</td><td>到场时间（打卡成功）</td></tr>
+<tr><td><code>finish_at</code></td><td>DATETIME</td><td>完成时间</td></tr>
+<tr><td><code>deadline</code></td><td>DATETIME</td><td>要求完成时间</td></tr>
+<tr><td><code>sla_json</code></td><td>JSON</td><td>{"response_min":30,"arrive_min":120,"fix_min":1440} 快照，避免合同变更影响历史</td></tr>
+<tr><td><code>status</code></td><td>VARCHAR(16)</td><td>DISPATCHED / ACCEPTED / ON_SITE / SUBMITTED / APPROVED / CLOSED / RETURNED / OVERDUE</td></tr>
+<tr><td><code>is_overdue</code></td><td>TINYINT</td><td>是否超期（定时任务刷新，用于红色计数）</td></tr>
+</tbody>
+</table>
+
+<h3>4.4 ops_record 运维记录</h3>
+<table>
+<thead><tr><th style="width:170px">字段</th><th style="width:160px">类型</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>record_no</code></td><td>VARCHAR(32)</td><td>记录编号</td></tr>
+<tr><td><code>task_id</code></td><td>BIGINT</td><td>关联任务（一对一）</td></tr>
+<tr><td><code>station_id</code></td><td>BIGINT</td><td>站房</td></tr>
+<tr><td><code>ops_type</code></td><td>VARCHAR(24)</td><td>作业类型，决定标记核验的对应关系</td></tr>
+<tr><td><code>engineer_id</code></td><td>BIGINT</td><td>执行人</td></tr>
+<tr><td><code>begin_time</code> / <code>end_time</code></td><td>DATETIME</td><td>作业起止，用于与数据标记时段比对</td></tr>
+<tr><td><code>mark_begin</code> / <code>mark_end</code></td><td>DATETIME</td><td>本次作业应产生的数据标记时段（校准/维护必填）</td></tr>
+<tr><td><code>conclusion</code></td><td>VARCHAR(500)</td><td>结论</td></tr>
+<tr><td><code>next_plan_hint</code></td><td>DATE</td><td>建议下次作业日期</td></tr>
+<tr><td><code>status</code></td><td>VARCHAR(16)</td><td>DRAFT / SUBMITTED / APPROVED / REJECTED</td></tr>
+<tr><td><code>sign_engineer</code></td><td>VARCHAR(255)</td><td>执行人签名图 object_key</td></tr>
+<tr><td><code>sign_auditor</code></td><td>VARCHAR(255)</td><td>审核人签名图 object_key</td></tr>
+</tbody>
+</table>
+
+<h3>4.5 alm_rule 报警规则（配置化核心）</h3>
+<table>
+<thead><tr><th style="width:170px">字段</th><th style="width:160px">类型</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>rule_code</code></td><td>VARCHAR(32)</td><td>规则编码，如 OVER_LIMIT / DEAD_VALUE</td></tr>
+<tr><td><code>category</code></td><td>VARCHAR(16)</td><td>DATA / VALIDITY / DEVICE / OPS / SECURITY</td></tr>
+<tr><td><code>level</code></td><td>VARCHAR(4)</td><td>P1 / P2 / P3</td></tr>
+<tr><td><code>expression</code></td><td>VARCHAR(1000)</td><td>判定表达式，如 <code>value &gt; limit &amp;&amp; dev_flag='N'</code></td></tr>
+<tr><td><code>duration_sec</code></td><td>INT</td><td>持续时长（防抖），如连续 3 个分钟值满足才报</td></tr>
+<tr><td><code>suppress_sec</code></td><td>INT</td><td>抑制窗口（同类报警 N 秒内不重复）</td></tr>
+<tr><td><code>window_json</code></td><td>JSON</td><td>生效时段、生效日期、站房类型</td></tr>
+<tr><td><code>channels</code></td><td>VARCHAR(64)</td><td>FEISHU,WXA,SMS 逗号分隔</td></tr>
+<tr><td><code>escalate_json</code></td><td>JSON</td><td>升级策略：{"15min":"MGR","30min":"ORG","45min":"PHONE"}</td></tr>
+<tr><td><code>enabled</code></td><td>TINYINT</td><td>是否启用</td></tr>
+</tbody>
+</table>
+
+<h3>4.6 其他核心表（摘要）</h3>
+<table>
+<thead><tr><th style="width:190px">表</th><th>必填关键字段</th></tr></thead>
+<tbody>
+<tr><td><code>ops_plan</code></td><td>plan_no, station_id, period, plan_type, planned_date, status, source(自动/手工), approve_by</td></tr>
+<tr><td><code>inv_flow</code></td><td>item_id, batch_no, type, qty, station_id, device_id, <strong>task_id</strong>（关联运维记录，实现流向追溯）, operator, at</td></tr>
+<tr><td><code>alm_event</code></td><td>event_no, rule_id, station_id, factor_code, level, value, threshold, begin_at, end_at, status, owner_id, related_task_id</td></tr>
+<tr><td><code>msg_send_log</code></td><td>event_id, channel, receiver, template_code, status(SENT/FAILED/RETRY), retry_cnt, error_msg, sent_at</td></tr>
+<tr><td><code>sys_audit_log</code></td><td>user_id, tenant_id, module, action, biz_id, before_json, after_json, ip, ua, created_at（<strong>无 update/delete 权限</strong>）</td></tr>
+<tr><td><code>doc_file</code></td><td>category, station_id, enterprise_id, name, object_key, size, sha256, expire_date, version</td></tr>
+</tbody>
+</table>
+
+<h2 id="s5">05 时序库设计</h2>
+<p>TDengine 采用"超级表 + 子表"模型：一个站房一张子表，按天分区。写入走 <code>INSERT INTO ... USING ... TAGS</code> 自动建表。</p>
+
+<h3>5.1 分钟数据超级表</h3>
+<pre><code>CREATE STABLE IF NOT EXISTS ts_data_minute (
+  ts          TIMESTAMP,        -- 数据时间
+  value       DOUBLE,           -- 数值
+  dev_flag    NCHAR(4),         -- 设备标记 N/D/C/M/T/Td
+  prod_flag   NCHAR(4),         -- 工况标记 N/St/Sd/B/F
+  raw_value   DOUBLE,           -- 原始信号值
+  quality     TINYINT           -- 0 未知 1 有效 2 无效 3 未标记
+) TAGS (
+  station_id  BIGINT,
+  station_code NCHAR(32),
+  factor_code NCHAR(16),
+  unit        NCHAR(16),
+  tenant_id   BIGINT
+);</code></pre>
+
+<h3>5.2 存储与查询权衡</h3>
+<table>
+<thead><tr><th style="width:150px">决策</th><th>方案</th><th>理由</th></tr></thead>
+<tbody>
+<tr><td>一级标签</td><td>station_id + factor_code</td><td>90% 查询按"站房+因子+时间"</td></tr>
+<tr><td>分区</td><td>按天（<code>KEEP 365</code>）</td><td>配合"在线 12 个月"要求</td></tr>
+<tr><td>预聚合</td><td>小时/日表由定时任务生成</td><td>报表不扫明细，避免全表聚合</td></tr>
+<tr><td>乱序写入</td><td>允许（补传场景）</td><td>TDengine 天然支持乱序，注意设置 <code>KEEP</code> 与 <code>DURATION</code></td></tr>
+<tr><td>去重</td><td>唯一约束 (ts, station, factor) + 幂等写</td><td>补传会重复上报，必须幂等</td></tr>
+</tbody>
+</table>
+
+<h2 id="s6">06 索引、分区与归档</h2>
+<table>
+<thead><tr><th style="width:150px">对象</th><th>策略</th></tr></thead>
+<tbody>
+<tr><td>md_station</td><td>UNIQUE(station_code)；INDEX(enterprise_id, station_type, biz_status)；INDEX(ops_org_id)</td></tr>
+<tr><td>md_device</td><td>UNIQUE(sn)；INDEX(station_id, category)</td></tr>
+<tr><td>ops_task</td><td>INDEX(assignee_id, status, deadline)；INDEX(station_id, plan_item_id)</td></tr>
+<tr><td>ops_record</td><td>INDEX(task_id)；INDEX(station_id, ops_type, begin_time)</td></tr>
+<tr><td>alm_event</td><td>INDEX(station_id, level, status, begin_at)；按月分区（历史 13 个月）</td></tr>
+<tr><td>sys_audit_log</td><td>INDEX(user_id, created_at)；按月分区；只读账号</td></tr>
+<tr><td>msg_send_log</td><td>INDEX(event_id, channel)；按月分区，保留 6 个月</td></tr>
+<tr><td>归档</td><td>分钟数据 12 个月后导出 Parquet 到对象存储；业务单据永不物理删除</td></tr>
+</tbody>
+</table>
+
+<h2 id="s7">07 关键 SQL 口径</h2>
+
+<h3>7.1 小时有效率（附录 G）</h3>
+<pre><code>-- 某站房某因子某小时：有效分钟数、有效率、是否有效（≥45 分钟）
+SELECT
+  station_id,
+  factor_code,
+  TO_TIMESTAMP(ts / 3600000 * 3600) AS hour_ts,
+  COUNT(*)                                        AS total_min,
+  SUM(CASE WHEN dev_flag = 'N' THEN 1 ELSE 0 END)  AS valid_min,
+  ROUND(SUM(CASE WHEN dev_flag = 'N' THEN 1 ELSE 0 END) / 60.0, 4) AS valid_rate,
+  CASE WHEN SUM(CASE WHEN dev_flag = 'N' THEN 1 ELSE 0 END) >= 45
+       THEN 1 ELSE 0 END                          AS hour_valid
+FROM ts_data_minute
+WHERE station_id = ? AND factor_code = ?
+  AND ts >= ? AND ts < ?
+GROUP BY station_id, factor_code, hour_ts;</code></pre>
+
+<h3>7.2 日有效率</h3>
+<pre><code>-- 日均值有效条件：有效小时数 ≥ 75%（18 小时）
+SELECT
+  COUNT(*)                                        AS total_hour,
+  SUM(hour_valid)                                 AS valid_hour,
+  ROUND(SUM(hour_valid) / 24.0, 4)                AS day_valid_rate,
+  CASE WHEN SUM(hour_valid) >= 18 THEN 1 ELSE 0 END AS day_valid,
+  AVG(CASE WHEN hour_valid = 1 THEN avg_value END)  AS day_avg
+FROM ts_data_hour
+WHERE station_id = ? AND factor_code = ?
+  AND ts >= ? AND ts < ?;</code></pre>
+
+<h3>7.3 标记 ⇄ 工单 核验</h3>
+<pre><code>-- 正向：标记了 C/M/D 但找不到对应运维记录（疑似虚假标记）
+SELECT m.station_id, m.factor_code,
+       DATE_FORMAT(m.ts, '%Y-%m-%d %H:%i') AS mark_time,
+       m.dev_flag
+FROM (
+  SELECT station_id, factor_code, ts, dev_flag
+  FROM ts_data_minute
+  WHERE dev_flag IN ('C','M','D')
+    AND ts >= ? AND ts < ?
+) m
+LEFT JOIN ops_record r
+  ON  r.station_id = m.station_id
+  AND r.status = 'APPROVED'
+  AND m.ts BETWEEN r.mark_begin AND r.mark_end
+WHERE r.id IS NULL
+ORDER BY m.ts DESC;</code></pre>
+
+<h3>7.4 计划覆盖率</h3>
+<pre><code>-- 本月应运维站房 vs 已排期站房
+SELECT
+  COUNT(DISTINCT s.id)                                  AS should_plan,
+  COUNT(DISTINCT p.station_id)                          AS planned,
+  ROUND(COUNT(DISTINCT p.station_id) / COUNT(DISTINCT s.id), 4) AS coverage
+FROM md_station s
+LEFT JOIN ops_plan p
+  ON p.station_id = s.id AND p.period = ? AND p.status IN ('APPROVED','DONE')
+WHERE s.deleted = 0
+  AND s.biz_status IN ('NORMAL','ABNORMAL')
+  AND s.ops_org_id = ?;</code></pre>
+
+<div class="note">
+<span class="t">配套文件</span>
+<p>完整可执行 DDL（含注释、索引、分区、字典初始化数据）见同目录 <a href="schema.sql">schema.sql</a>。</p>
+</div>
+
+</div>
+
+<div class="doc-foot">
+  <span>污染源自动监控设施第三方运维信息管理系统 · 数据库设计 v1.0</span>
+  <span>2026-11-04</span>
+</div>
+
+</div>
+</body>
+</html>

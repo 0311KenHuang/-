@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "项目目录功能与代码依赖图",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1280, 650],
+    "views": [
+      {
+        "id": "main-code",
+        "label": "正式业务代码",
+        "focus": ["web", "env-api", "env-service", "env-dao", "env-ts", "env-ingest", "env-common"],
+        "note": "backend 是正式 Java 服务端；web 是当前管理端。"
+      },
+      {
+        "id": "data-path",
+        "label": "监测数据链路",
+        "focus": ["device", "env-ingest", "env-ts", "env-dao", "env-service", "env-api", "web"],
+        "note": "HJ212 报文从数采仪进入，解析、落库、计算后由接口提供给管理端。"
+      },
+      {
+        "id": "supporting",
+        "label": "说明与辅助目录",
+        "focus": ["docs", "server", "deploy"],
+        "note": "docs 保存需求设计，server 用于逻辑对照，deploy 提供本地基础设施。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "device",
+      "type": "external",
+      "label": "现场数采仪",
+      "sublabel": "HJ212 · TCP 20000",
+      "pos": [35, 380],
+      "size": [145, 64]
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "web/",
+      "sublabel": "Vue3 管理端 · 页面/路由/API",
+      "pos": [35, 165],
+      "size": [180, 72]
+    },
+    {
+      "id": "env-api",
+      "type": "backend",
+      "label": "backend/env-api/",
+      "sublabel": "HTTP 控制器 · 鉴权 · 启动进程",
+      "pos": [285, 165],
+      "size": [190, 72]
+    },
+    {
+      "id": "env-service",
+      "type": "backend",
+      "label": "backend/env-service/",
+      "sublabel": "业务规则 · 报警 · 消息 · 运维",
+      "pos": [545, 165],
+      "size": [205, 72]
+    },
+    {
+      "id": "env-dao",
+      "type": "database",
+      "label": "backend/env-dao/",
+      "sublabel": "实体 · Mapper · Flyway · 多租户",
+      "pos": [830, 165],
+      "size": [200, 72]
+    },
+    {
+      "id": "env-common",
+      "type": "security",
+      "label": "backend/env-common/",
+      "sublabel": "统一响应 · 异常 · 租户 · 审计",
+      "pos": [545, 35],
+      "size": [205, 68]
+    },
+    {
+      "id": "env-ingest",
+      "type": "backend",
+      "label": "backend/env-ingest/",
+      "sublabel": "Netty 接入 · 拆包 · CRC/SM4",
+      "pos": [285, 375],
+      "size": [190, 72]
+    },
+    {
+      "id": "env-ts",
+      "type": "backend",
+      "label": "backend/env-ts/",
+      "sublabel": "CP 解析 · 分钟值 · 小时/日聚合",
+      "pos": [545, 375],
+      "size": [205, 72]
+    },
+    {
+      "id": "deploy",
+      "type": "cloud",
+      "label": "deploy/",
+      "sublabel": "Docker Compose · MySQL/Redis/TDengine",
+      "pos": [830, 375],
+      "size": [200, 72]
+    },
+    {
+      "id": "docs",
+      "type": "external",
+      "label": "docs/",
+      "sublabel": "需求 · 数据库 · 接入 · 页面设计",
+      "pos": [1085, 35],
+      "size": [165, 68]
+    },
+    {
+      "id": "server",
+      "type": "backend",
+      "label": "server/",
+      "sublabel": "NestJS 参考实现 · 不再演进",
+      "pos": [1085, 375],
+      "size": [165, 72]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "正式 Java 服务端 backend/",
+      "wraps": ["env-api", "env-service", "env-dao", "env-common", "env-ingest", "env-ts"],
+      "pad": 22
+    }
+  ],
+  "connections": [
+    {"id": "web-api", "from": "web", "to": "env-api", "label": "REST + Token", "variant": "emphasis"},
+    {"id": "api-service", "from": "env-api", "to": "env-service", "label": "调用业务服务"},
+    {"id": "service-dao", "from": "env-service", "to": "env-dao", "label": "查询/写入"},
+    {"id": "device-ingest", "from": "device", "to": "env-ingest", "label": "HJ212 报文", "variant": "emphasis"},
+    {"id": "ingest-ts", "from": "env-ingest", "to": "env-ts", "label": "CP 数据"},
+    {"id": "ts-dao", "from": "env-ts", "to": "env-dao", "label": "分钟/小时/日", "fromSide": "right", "toSide": "bottom"},
+    {"id": "common-service", "from": "env-common", "to": "env-service", "label": "公共横切能力", "fromSide": "bottom", "toSide": "top", "variant": "security", "labelDy": 24},
+    {"id": "dao-deploy", "from": "env-dao", "to": "deploy", "label": "MySQL/Flyway", "fromSide": "bottom", "toSide": "top", "labelAt": [995, 260]}
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "阅读入口",
+      "items": [
+        "先看 README.md 和 docs/，再从 web/src/router 与 env-api/controller 找功能入口",
+        "业务规则主要集中在 env-service，数据计算集中在 env-ts"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "正式实现",
+      "items": [
+        "backend/ 是 Spring Boot 2.7.18 + JDK 8 的正式服务端",
+        "env-api 与 env-ingest 是两个可独立启动的进程"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "不要当源码阅读",
+      "items": [
+        "backend/*/target、server/dist、web/node_modules 属于构建或依赖产物",
+        "server/ 仅作 NestJS 逻辑参考，新增功能应写入 backend/"
+      ]
+    }
+  ]
+}

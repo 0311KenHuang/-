@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>00 · 架构决策记录（ADR）</title>
+<link rel="stylesheet" href="assets/doc.css">
+</head>
+<body>
+<div class="page">
+
+<div class="fnav">
+  <a href="index.html">索引</a>
+  <a class="cur" href="00-架构决策记录.html">00 决策记录</a>
+  <a href="01-需求规格说明书.html">01 需求规格</a>
+  <a href="02-数据库设计.html">02 库表设计</a>
+  <a href="03-HJ212-2025接入方案.html">03 接入方案</a>
+  <a href="04-报警与推送设计.html">04 报警推送</a>
+  <a href="05-页面清单与交互说明.html">05 页面清单</a>
+</div>
+
+<div class="doc-head">
+  <div class="doc-kicker">Architecture Decision Records · v1.0</div>
+  <h1>架构决策记录</h1>
+  <p class="doc-sub">把"已经拍板的事"和"还没定的风险"固定下来，避免后面反复讨论、反复返工。</p>
+  <div class="doc-meta">
+    <span><b>日期</b>2026-11-04</span>
+    <span><b>状态</b>ADR-001/002/003 已定，ADR-004 待确认</span>
+  </div>
+</div>
+
+<div class="doc-body">
+
+<h2>ADR-001　系统主体：监管方</h2>
+<table>
+<thead><tr><th style="width:110px">项</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td>状态</td><td><span class="tag ok">已采纳</span>（甲方确认）</td></tr>
+<tr><td>背景</td><td>参考平台含「执法检查」「整改通知单」，区域为四川省/成都市，判断为监管方视角。</td></tr>
+<tr><td>决策</td><td>以<strong>监管方为主租户</strong>，运维单位与企业作为<strong>入驻租户</strong>；一套系统、多租户隔离、按角色出四套工作台。</td></tr>
+<tr><td>后果</td><td>
+<ul>
+<li>权限模型必须是「功能权限 × 数据权限」，运维单位只能看自己承接的站房，企业只能看本企业。</li>
+<li>考核、排名、督办、执法检查是<strong>一等公民</strong>，不是附加功能。</li>
+<li>平台侧要能配置"谁给谁做运维"（站房—运维单位—合同绑定），换运维单位要留历史。</li>
+<li>数据上报口径必须能对上级平台解释，否则监管方第一个质疑。</li>
+</ul>
+</td></tr>
+<tr><td>被否方案</td><td>纯运维公司内部系统（SaaS 单租户）：无法承载执法与考核，且与参考平台形态不符。</td></tr>
+</tbody>
+</table>
+
+<h2>ADR-002　数据源：双模适配，先直连后对接</h2>
+<table>
+<thead><tr><th style="width:110px">项</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td>状态</td><td><span class="tag ok">已采纳</span>（甲方确认：<strong>直连数采仪</strong>）</td></tr>
+<tr><td>背景</td><td>数据可能有三种来源：① 现场数采仪直接上报我方平台；② 从国发/省平台取数；③ 甲方已有平台转发。三者的能力边界差别极大。</td></tr>
+<tr><td>决策</td><td>采用 <strong>DirectProvider：数采仪 TCP 直连</strong>。报文经 Netty 接入、SM4 解密、按 MN 归属站房后落库；原始报文、双维度标记、工作参数、反控全部可用。上级平台对接（UpstreamProvider）<strong>本期不做</strong>，仅保留接口形状。</td></tr>
+</tbody>
+</table>
+
+<pre><code>IngestProvider（接口）
+├─ DirectProvider      现场机 TCP / HTTP 直连（本期实现）
+│    · 能拿到：原始报文、双维度标记、工作参数、日志、反控
+└─ UpstreamProvider    对接国发/省平台（预留）
+     · 通常只能拿到：分钟/小时数据 + 部分标记；原始报文与反控大概率没有</code></pre>
+
+<table>
+<thead><tr><th style="width:180px">能力</th><th style="width:130px">自建直连</th><th style="width:130px">对接上级平台</th><th>影响的模块</th></tr></thead>
+<tbody>
+<tr><td>分钟级原始报文</td><td><span class="tag ok">有</span></td><td><span class="tag danger">通常没有</span></td><td>原始数据页、报文审计、CRC 统计</td></tr>
+<tr><td>双维度数据标记</td><td><span class="tag ok">有</span></td><td><span class="tag warn">部分有</span></td><td>附录 G 有效性判定、标记 ⇄ 工单核验</td></tr>
+<tr><td>工作参数 / 变更</td><td><span class="tag ok">有</span></td><td><span class="tag danger">多半没有</span></td><td>参数监控、参数变更告警</td></tr>
+<tr><td>设备 SN / 密钥状态</td><td><span class="tag ok">有</span></td><td><span class="tag warn">看平台开放程度</span></td><td>联网监测、SN 一致性校验</td></tr>
+<tr><td>远程反控（校时/读参）</td><td><span class="tag ok">有</span></td><td><span class="tag danger">基本没有</span></td><td>远程反控模块</td></tr>
+<tr><td>时效性</td><td>实时（秒级）</td><td>取决于上级平台同步周期（常为小时级）</td><td>报警延迟、P1 触达 60 秒指标</td></tr>
+</tbody>
+</table>
+
+<div class="note danger">
+<span class="t">这条必须写进合同</span>
+<p>如果最终走"对接上级平台"，<strong>P1 报警 60 秒触达、原始报文追溯、远程反控这三条验收指标都不成立</strong>。要么甲方接受降级指标，要么现场改造把数采仪指向我方平台。现在不定，验收时一定吵。</p>
+</div>
+
+<h3>落地做法</h3>
+<ul>
+<li>配置项 <code>INGEST_MODE=direct | upstream</code>，启动时决定装配哪个 Provider（当前骨架已按此设计，<code>TcpServer</code> 在非 direct 模式自动跳过）。</li>
+<li>业务层只依赖「标准化事件」，不依赖报文格式；换数据源不改报警、报表、工单。</li>
+<li>两种模式并存时（部分点位直连、部分对接），按站房维度路由，而不是全局开关。</li>
+</ul>
+
+<h2>ADR-003　微信生态：已认证 + 公网部署</h2>
+<table>
+<thead><tr><th style="width:110px">项</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td>状态</td><td><span class="tag ok">已采纳</span>：公众号「<strong>海兰天澄</strong>」，主体 <strong>成都海兰天澄科技股份有限公司</strong>（四川成都，已认证）</td></tr>
+<tr><td>决策</td><td>以「海兰天澄」认证服务号为公众号通道（具备模板消息/订阅通知能力），小程序作为查看与作业入口；两者都<strong>不承担"必达"责任</strong>。系统部署在公网，数据层可下沉内网。</td></tr>
+<tr><td>后果</td><td>
+<ul>
+<li>公网暴露接入端口（20000）与 Web，必须做：WAF/防火墙白名单、接入令牌、TLS、限流、防重放；等保二级。</li>
+<li>小程序需要已备案域名 + HTTPS + 服务器域名白名单，提前 2~3 周准备。</li>
+<li>订阅消息仍需用户逐次授权，产品上要设计"用一次攒一条"的授权引导。</li>
+<li>公众号若为订阅号则无模板消息能力，必须确认是<strong>认证服务号</strong>。</li>
+</ul>
+</td></tr>
+</tbody>
+</table>
+
+<h2>ADR-004　服务端语言：TypeScript 骨架先行</h2>
+<table>
+<thead><tr><th style="width:110px">项</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td>状态</td><td><span class="tag warn">待确认</span></td></tr>
+<tr><td>背景</td><td>文档方案为 Spring Boot；本机仅有 JDK 8 且 Maven 的 <code>JAVA_HOME</code> 指向已删除目录，无法编译验证。</td></tr>
+<tr><td>决策</td><td>先用 NestJS + TypeORM 落地可运行骨架，<strong>模块边界与 DDL 与语言无关</strong>，需要时可 1:1 平移。</td></tr>
+<tr><td>待确认</td><td>甲方是否强制 Java / 信创（国产数据库、中间件、操作系统）。若强制，需在开工前确定，避免二次开发。</td></tr>
+</tbody>
+</table>
+
+<h2>对文档的修订</h2>
+<table>
+<thead><tr><th style="width:150px">文档</th><th>修订点</th></tr></thead>
+<tbody>
+<tr><td>01 需求规格</td><td>Q1（主体）与 Q4（微信/部署）已有答案；Q2（数据源）转为"双模设计 + 合同条款"处理</td></tr>
+<tr><td>02 库表设计</td><td>无变化；<code>sys_tenant.tenant_type</code> 取值确定为 REG / OPS / ENT</td></tr>
+<tr><td>03 接入方案</td><td>新增 Provider 抽象一节；TCP 仅在 direct 模式启用</td></tr>
+<tr><td>04 报警推送</td><td>公网部署后，P1 60 秒指标可达成；若走 upstream 需重估</td></tr>
+<tr><td>05 页面清单</td><td>监管工作台（W03）优先级从 P1 提到 P0</td></tr>
+</tbody>
+</table>
+
+</div>
+
+<div class="doc-foot">
+  <span>架构决策记录 v1.0 · 2026-11-04</span>
+  <span>污染源自动监控设施第三方运维信息管理系统</span>
+</div>
+
+</div>
+</body>
+</html>

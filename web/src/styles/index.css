@@ -1,0 +1,41 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', 'Hiragino Sans GB', sans-serif;
+  font-size: 14px;
+  color: #16202e;
+  background: #f5f8fc;
+  -webkit-font-smoothing: antialiased;
+}
+
+code {
+  font-family: Consolas, 'SFMono-Regular', Menlo, monospace;
+  background: #f2f5fa;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+  color: #1b3a63;
+}
+
+/* 全局滚动条：后台系统长时间使用，细一点不挡视线 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cfd8e5;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b6c3d6;
+}

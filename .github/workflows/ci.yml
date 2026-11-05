@@ -1,0 +1,89 @@
+# CI：push/PR 到 main 触发
+#
+# 后端：JDK 8 + 内置 Maven（mvn.sh 已兼容 Linux），services 起 MySQL/Redis，
+#       集成测试（RUN_IT=true）在 CI 真实执行——登录/租户/401 语义都有断言
+# 前端：npm ci + 类型检查 + 生产构建
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: 后端构建与测试
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root123456
+          MYSQL_DATABASE: env_mon
+          TZ: Asia/Shanghai
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot123456"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+
+      - name: 后端测试（含集成测试）
+        working-directory: backend
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_NAME: env_mon
+          DB_USER: root
+          DB_PASSWORD: root123456
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: '6379'
+          RUN_IT: 'true'
+        run: |
+          chmod +x mvn.sh
+          ./mvn.sh -B clean test
+
+  web:
+    name: 前端类型检查与构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 安装依赖
+        working-directory: web
+        run: npm ci
+
+      - name: 类型检查
+        working-directory: web
+        run: npm run typecheck
+
+      - name: 生产构建
+        working-directory: web
+        run: npm run build
